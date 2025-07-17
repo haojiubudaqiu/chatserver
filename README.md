@@ -6,3 +6,7 @@ cd build
 rm -rf *
 cmake ..
 make 
+
+
+对于项目中核心类的理解：
+https://mp.csdn.net/mp_blog/creation/editor/149334321
