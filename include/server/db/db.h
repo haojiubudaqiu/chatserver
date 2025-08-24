@@ -21,8 +21,18 @@ public:
     MYSQL_RES *query(string sql);
     // 获取连接
     MYSQL* getConnection();
+    
+    // 连接池初始化
+    static bool initConnectionPool(const std::string& server, const std::string& user,
+                                  const std::string& password, const std::string& dbname,
+                                  int port = 3306, int maxSize = 10);
+    
+    // 从连接池获取连接
+    static std::shared_ptr<MySQL> getConnectionFromPool();
+    
 private:
     MYSQL *_conn;
+    static bool useConnectionPool;
 };
 
 #endif

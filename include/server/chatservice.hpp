@@ -15,10 +15,16 @@ using namespace muduo::net;
 #include "usermodel.hpp"
 #include "offlinemessagemodel.hpp"
 #include "json.hpp"
+#include "message.pb.h"
+#include "proto_msg_handler.h"
+#include "proto_msg_processor.h"
+#include "kafka_manager.h"
 using json = nlohmann::json;
 
 // 表示处理消息的事件回调方法类型,用using给已经存在的类型定义一个新的名称
 using MsgHandler = std::function<void(const TcpConnectionPtr &conn, json &js, Timestamp)>;
+// Protobuf消息处理器类型
+using ProtoMsgHandler = std::function<void(const TcpConnectionPtr &conn, const string &data, Timestamp)>;
 
 // 聊天服务器业务类
 class ChatService
@@ -26,28 +32,46 @@ class ChatService
 public:
     // 获取唯一单例对象的接口函数
     static ChatService *instance();
-    // 处理登录业务
+    // 处理登录业务 (JSON版本)
     void login(const TcpConnectionPtr &conn, json &js, Timestamp time);
-    // 处理注册业务
+    // 处理登录业务 (Protobuf版本)
+    void loginProto(const TcpConnectionPtr &conn, const string &data, Timestamp time);
+    // 处理注册业务 (JSON版本)
     void reg(const TcpConnectionPtr &conn, json &js, Timestamp time);
-    // 一对一聊天业务
+    // 处理注册业务 (Protobuf版本)
+    void regProto(const TcpConnectionPtr &conn, const string &data, Timestamp time);
+    // 一对一聊天业务 (JSON版本)
     void oneChat(const TcpConnectionPtr &conn, json &js, Timestamp time);
-    // 添加好友业务
+    // 一对一聊天业务 (Protobuf版本)
+    void oneChatProto(const TcpConnectionPtr &conn, const string &data, Timestamp time);
+    // 添加好友业务 (JSON版本)
     void addFriend(const TcpConnectionPtr &conn, json &js, Timestamp time);
-    // 创建群组业务
+    // 添加好友业务 (Protobuf版本)
+    void addFriendProto(const TcpConnectionPtr &conn, const string &data, Timestamp time);
+    // 创建群组业务 (JSON版本)
     void createGroup(const TcpConnectionPtr &conn, json &js, Timestamp time);
-    // 加入群组业务
+    // 创建群组业务 (Protobuf版本)
+    void createGroupProto(const TcpConnectionPtr &conn, const string &data, Timestamp time);
+    // 加入群组业务 (JSON版本)
     void addGroup(const TcpConnectionPtr &conn, json &js, Timestamp time);
-    // 群组聊天业务
+    // 加入群组业务 (Protobuf版本)
+    void addGroupProto(const TcpConnectionPtr &conn, const string &data, Timestamp time);
+    // 群组聊天业务 (JSON版本)
     void groupChat(const TcpConnectionPtr &conn, json &js, Timestamp time);
-    // 处理注销业务
+    // 群组聊天业务 (Protobuf版本)
+    void groupChatProto(const TcpConnectionPtr &conn, const string &data, Timestamp time);
+    // 处理注销业务 (JSON版本)
     void loginout(const TcpConnectionPtr &conn, json &js, Timestamp time);
+    // 处理注销业务 (Protobuf版本)
+    void loginoutProto(const TcpConnectionPtr &conn, const string &data, Timestamp time);
     // 处理客户端异常退出
     void clientCloseException(const TcpConnectionPtr &conn);
     // 服务器异常，业务重置方法
     void reset();
     // 获取消息对应的处理器
     MsgHandler getHandler(int msgid);
+    // 获取Protobuf消息对应的处理器
+    ProtoMsgHandler getProtoHandler(chat::MsgType msgType);
     // 从redis消息队列中获取订阅的消息
     void handleRedisSubscribeMessage(int, string);
 

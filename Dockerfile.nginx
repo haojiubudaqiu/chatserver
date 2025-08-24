@@ -1,0 +1,11 @@
+# Nginx负载均衡器Dockerfile
+FROM nginx:alpine
+
+# 复制Nginx配置文件
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# 暴露端口
+EXPOSE 7000 8080
+
+# 启动Nginx
+CMD ["nginx", "-g", "daemon off;"]

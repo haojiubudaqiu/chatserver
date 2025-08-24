@@ -1,5 +1,7 @@
 #include "chatservice.hpp"
 #include "public.hpp"
+#include "message.pb.h"
+#include "cache_manager.h"
 #include <muduo/base/Logging.h>
 #include <vector>
 using namespace std;
@@ -15,18 +17,45 @@ ChatService *ChatService::instance()
 // 构造函数，注册消息以及对应的Handler回调操作
 ChatService::ChatService()
 {   
+    // 初始化缓存管理器
+    CacheManager::instance()->init();
+    
+    // 初始化Kafka管理器
+    KafkaManager::instance()->init("localhost:9092");
+    
+    // 初始化数据库连接池
+    MySQL::initConnectionPool("127.0.0.1", "root", "Sf523416&111", "chat", 3306, 20);
+    
     //对成员变量进行初始化
-    // 用户基本业务管理相关事件处理回调注册
+    // 用户基本业务管理相关事件处理回调注册 (JSON版本)
     _msgHandlerMap.insert({LOGIN_MSG, std::bind(&ChatService::login, this, _1, _2, _3)});
     _msgHandlerMap.insert({LOGINOUT_MSG, std::bind(&ChatService::loginout, this, _1, _2, _3)});
     _msgHandlerMap.insert({REG_MSG, std::bind(&ChatService::reg, this, _1, _2, _3)});
     _msgHandlerMap.insert({ONE_CHAT_MSG, std::bind(&ChatService::oneChat, this, _1, _2, _3)});
     _msgHandlerMap.insert({ADD_FRIEND_MSG, std::bind(&ChatService::addFriend, this, _1, _2, _3)});
 
-    // 群组业务管理相关事件处理回调注册
+    // 群组业务管理相关事件处理回调注册 (JSON版本)
     _msgHandlerMap.insert({CREATE_GROUP_MSG, std::bind(&ChatService::createGroup, this, _1, _2, _3)});
     _msgHandlerMap.insert({ADD_GROUP_MSG, std::bind(&ChatService::addGroup, this, _1, _2, _3)});
     _msgHandlerMap.insert({GROUP_CHAT_MSG, std::bind(&ChatService::groupChat, this, _1, _2, _3)});
+
+    // 注册Protobuf消息处理器
+    ProtoMsgHandlerMap::instance()->registerHandler(chat::LOGIN_MSG, 
+        std::bind(&ChatService::loginProto, this, _1, _2, _3));
+    ProtoMsgHandlerMap::instance()->registerHandler(chat::LOGINOUT_MSG, 
+        std::bind(&ChatService::loginoutProto, this, _1, _2, _3));
+    ProtoMsgHandlerMap::instance()->registerHandler(chat::REG_MSG, 
+        std::bind(&ChatService::regProto, this, _1, _2, _3));
+    ProtoMsgHandlerMap::instance()->registerHandler(chat::ONE_CHAT_MSG, 
+        std::bind(&ChatService::oneChatProto, this, _1, _2, _3));
+    ProtoMsgHandlerMap::instance()->registerHandler(chat::ADD_FRIEND_MSG, 
+        std::bind(&ChatService::addFriendProto, this, _1, _2, _3));
+    ProtoMsgHandlerMap::instance()->registerHandler(chat::CREATE_GROUP_MSG, 
+        std::bind(&ChatService::createGroupProto, this, _1, _2, _3));
+    ProtoMsgHandlerMap::instance()->registerHandler(chat::ADD_GROUP_MSG, 
+        std::bind(&ChatService::addGroupProto, this, _1, _2, _3));
+    ProtoMsgHandlerMap::instance()->registerHandler(chat::GROUP_CHAT_MSG, 
+        std::bind(&ChatService::groupChatProto, this, _1, _2, _3));
 
     // 连接redis服务器
     if (_redis.connect())
@@ -65,6 +94,12 @@ MsgHandler ChatService::getHandler(int msgid)
         };
     }
     return _msgHandlerMap[msgid];
+}
+
+// 获取Protobuf消息对应的处理器
+ProtoMsgHandler ChatService::getProtoHandler(chat::MsgType msgType)
+{
+    return ProtoMsgHandlerMap::instance()->getHandler(msgType);
 }
 
 // 处理登录业务  id  pwd   pwd
@@ -173,6 +208,103 @@ void ChatService::login(const TcpConnectionPtr &conn, json &js, Timestamp time)
     }
 }
 
+// 处理登录业务 (Protobuf版本)
+void ChatService::loginProto(const TcpConnectionPtr &conn, const string &data, Timestamp time)
+{
+    chat::LoginRequest req;
+    if (!req.ParseFromString(data)) {
+        LOG_ERROR << "Failed to parse LoginRequest";
+        return;
+    }
+
+    int id = req.id();
+    string pwd = req.password();
+
+    User user = _userModel.query(id);
+    if (user.getId() == id && user.getPwd() == pwd)
+    {
+        if (user.getState() == "online")
+        {
+            // 该用户已经登录，不允许重复登录
+            chat::LoginResponse response;
+            response.mutable_base()->set_msgid(chat::LOGIN_MSG_ACK);
+            response.set_errno(2);
+            response.set_errmsg("this account is using, input another!");
+            conn->send(response.SerializeAsString());
+        }
+        else
+        {
+            // 登录成功，记录用户连接信息
+            {
+                lock_guard<mutex> lock(_connMutex);
+                _userConnMap.insert({id, conn});
+            }
+
+            // id用户登录成功后，向redis订阅channel(id)
+            _redis.subscribe(id); 
+
+            // 登录成功，更新用户状态信息 state offline=>online
+            user.setState("online");
+            _userModel.updateState(user);
+
+            chat::LoginResponse response;
+            response.mutable_base()->set_msgid(chat::LOGIN_MSG_ACK);
+            response.set_errno(0);
+            response.mutable_user()->set_id(user.getId());
+            response.mutable_user()->set_name(user.getName());
+            response.mutable_user()->set_state(user.getState());
+            
+            // 查询该用户是否有离线消息
+            vector<string> vec = _offlineMsgModel.query(id);
+            for (const string& msg : vec) {
+                response.add_offlinemsg(msg);
+            }
+            
+            // 读取该用户的离线消息后，把该用户的所有离线消息删除掉
+            if (!vec.empty()) {
+                _offlineMsgModel.remove(id);
+            }
+
+            // 查询该用户的好友信息并返回
+            vector<User> userVec = _friendModel.query(id);
+            for (const User &friendUser : userVec) {
+                chat::User* userProto = response.add_friends();
+                userProto->set_id(friendUser.getId());
+                userProto->set_name(friendUser.getName());
+                userProto->set_state(friendUser.getState());
+            }
+
+            // 查询用户的群组信息
+            vector<Group> groupuserVec = _groupModel.queryGroups(id);
+            for (const Group &group : groupuserVec) {
+                chat::GroupInfo* groupInfo = response.add_groups();
+                groupInfo->set_id(group.getId());
+                groupInfo->set_groupname(group.getName());
+                groupInfo->set_groupdesc(group.getDesc());
+                
+                for (const GroupUser &groupUser : group.getUsers()) {
+                    chat::GroupUser* groupUserProto = groupInfo->add_users();
+                    groupUserProto->set_id(groupUser.getId());
+                    groupUserProto->set_name(groupUser.getName());
+                    groupUserProto->set_state(groupUser.getState());
+                    groupUserProto->set_role(groupUser.getRole());
+                }
+            }
+
+            conn->send(response.SerializeAsString());
+        }
+    }
+    else
+    {
+        // 该用户不存在，用户存在但是密码错误，登录失败
+        chat::LoginResponse response;
+        response.mutable_base()->set_msgid(chat::LOGIN_MSG_ACK);
+        response.set_errno(1);
+        response.set_errmsg("id or password is invalid!");
+        conn->send(response.SerializeAsString());
+    }
+}
+
 // 处理注册业务  name  password
 void ChatService::reg(const TcpConnectionPtr &conn, json &js, Timestamp time)
 {
@@ -216,9 +348,20 @@ void ChatService::reg(const TcpConnectionPtr &conn, json &js, Timestamp time)
     try {
         bool state = _userModel.insert(user);
         if (state) {
-            // ... 成功处理 ...
+            // 注册成功
+            json response;
+            response["msgid"] = REG_MSG_ACK;
+            response["errno"] = 0;
+            response["id"] = user.getId();
+            response["name"] = user.getName();
+            conn->send(response.dump());
         } else {
-            // ... 失败处理 ...
+            // 注册失败
+            json response;
+            response["msgid"] = REG_MSG_ACK;
+            response["errno"] = 1;
+            response["errmsg"] = "Registration failed";
+            conn->send(response.dump());
         }
     }
     catch (const exception& e) {
@@ -232,10 +375,102 @@ void ChatService::reg(const TcpConnectionPtr &conn, json &js, Timestamp time)
     }
 }
 
+// 处理注册业务 (Protobuf版本)
+void ChatService::regProto(const TcpConnectionPtr &conn, const string &data, Timestamp time)
+{
+    chat::RegisterRequest req;
+    if (!req.ParseFromString(data)) {
+        LOG_ERROR << "Failed to parse RegisterRequest";
+        return;
+    }
+
+    // 检查连接是否有效
+    if (!conn->connected()) {
+        LOG_WARN << "Connection closed during registration";
+        return;
+    }
+    
+    string name = req.name();
+    string pwd = req.password();
+    
+    // 验证输入长度
+    if (name.empty() || name.length() > 50 || pwd.empty() || pwd.length() > 50) {
+        LOG_ERROR << "Invalid name or password length";
+        
+        chat::RegisterResponse response;
+        response.mutable_base()->set_msgid(chat::REG_MSG_ACK);
+        response.set_errno(401);
+        response.set_errmsg("Invalid name or password length");
+        conn->send(response.SerializeAsString());
+        return;
+    }
+    
+    User user;
+    user.setName(name);
+    user.setPwd(pwd);
+    
+    try {
+        bool state = _userModel.insert(user);
+        if (state) {
+            // 注册成功
+            chat::RegisterResponse response;
+            response.mutable_base()->set_msgid(chat::REG_MSG_ACK);
+            response.set_errno(0);
+            response.mutable_user()->set_id(user.getId());
+            response.mutable_user()->set_name(user.getName());
+            conn->send(response.SerializeAsString());
+        } else {
+            // 注册失败
+            chat::RegisterResponse response;
+            response.mutable_base()->set_msgid(chat::REG_MSG_ACK);
+            response.set_errno(1);
+            response.set_errmsg("Registration failed");
+            conn->send(response.SerializeAsString());
+        }
+    }
+    catch (const exception& e) {
+        LOG_ERROR << "Database error during registration: " << e.what();
+        
+        chat::RegisterResponse response;
+        response.mutable_base()->set_msgid(chat::REG_MSG_ACK);
+        response.set_errno(500);
+        response.set_errmsg("Internal server error");
+        conn->send(response.SerializeAsString());
+    }
+}
+
 // 处理注销业务
 void ChatService::loginout(const TcpConnectionPtr &conn, json &js, Timestamp time)
 {
     int userid = js["id"].get<int>();
+
+    {
+        lock_guard<mutex> lock(_connMutex);
+        auto it = _userConnMap.find(userid);
+        if (it != _userConnMap.end())
+        {
+            _userConnMap.erase(it);
+        }
+    }
+
+    // 用户注销，相当于就是下线，在redis中取消订阅通道
+    _redis.unsubscribe(userid); 
+
+    // 更新用户的状态信息
+    User user(userid, "", "", "offline");
+    _userModel.updateState(user);
+}
+
+// 处理注销业务 (Protobuf版本)
+void ChatService::loginoutProto(const TcpConnectionPtr &conn, const string &data, Timestamp time)
+{
+    chat::LogoutRequest req;
+    if (!req.ParseFromString(data)) {
+        LOG_ERROR << "Failed to parse LogoutRequest";
+        return;
+    }
+
+    int userid = req.base().fromid();
 
     {
         lock_guard<mutex> lock(_connMutex);

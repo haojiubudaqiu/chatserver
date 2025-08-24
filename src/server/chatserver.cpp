@@ -1,6 +1,7 @@
 #include "chatserver.hpp"
-#include "json.hpp"
 #include "chatservice.hpp"
+#include "message.pb.h"
+#include "proto_msg_handler.h"
 
 #include <iostream>
 //函数对象绑定器
@@ -8,7 +9,6 @@
 #include <string>
 using namespace std;
 using namespace placeholders;//参数占位符
-using json = nlohmann::json;
 
 // 初始化聊天服务器对象，构造函数
 ChatServer::ChatServer(EventLoop *loop,
@@ -50,29 +50,21 @@ void ChatServer::onMessage(const TcpConnectionPtr &conn,
 {
     string buf = buffer->retrieveAllAsString();
     
-    try {
-        json js = json::parse(buf);
-        
-        // 检查必须字段
-        if (!js.contains("msgid")) {
-            throw json::exception("Missing 'msgid' field");
-        }
-        
-        auto msgHandler = ChatService::instance()->getHandler(js["msgid"].get<int>());
-        msgHandler(conn, js, time);
-    }
-    catch (const json::exception& e) {
-        LOG_ERROR << "JSON parse error: " << e.what();
+    // 首先尝试解析为Protobuf消息
+    chat::BaseMessage baseMsg;
+    if (baseMsg.ParseFromString(buf)) {
+        // 是Protobuf消息
+        auto msgHandler = ProtoMsgHandlerMap::instance()->getHandler(baseMsg.msgid());
+        msgHandler(conn, buf, time);
+    } else {
+        // 如果不是Protobuf消息，可以尝试解析为JSON（向后兼容）
+        // 这里为了简化，我们只处理Protobuf消息
+        LOG_ERROR << "Failed to parse message as Protobuf";
         
         if (conn->connected()) {
-            json response;
-            response["msgid"] = INVALID_MSG_ACK;
-            response["errno"] = 400;
-            response["errmsg"] = "Invalid JSON format: " + string(e.what());
-            conn->send(response.dump());
+            chat::BaseMessage response;
+            response.set_msgid(chat::INVALID_MSG);
+            conn->send(response.SerializeAsString());
         }
-    }
-    catch (const exception& e) {
-        LOG_ERROR << "Message handling error: " << e.what();
     }
 }

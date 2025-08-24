@@ -1,4 +1,5 @@
 #include "db.h"
+#include "connection_pool.h"
 #include <muduo/base/Logging.h>
 
 // 数据库配置信息
@@ -6,6 +7,9 @@ static string server = "127.0.0.1";
 static string user = "root";
 static string password = "Sf523416&111";
 static string dbname = "chat";
+
+// 连接池标志
+bool MySQL::useConnectionPool = false;
 
 // 初始化数据库连接
 MySQL::MySQL()
@@ -18,6 +22,22 @@ MySQL::~MySQL()
 {
     if (_conn != nullptr)
         mysql_close(_conn);
+}
+
+// 连接池初始化
+bool MySQL::initConnectionPool(const std::string& server, const std::string& user,
+                              const std::string& password, const std::string& dbname,
+                              int port, int maxSize) {
+    useConnectionPool = true;
+    return ConnectionPool::instance()->init(server, user, password, dbname, port, maxSize);
+}
+
+// 从连接池获取连接
+std::shared_ptr<MySQL> MySQL::getConnectionFromPool() {
+    if (useConnectionPool) {
+        return ConnectionPool::instance()->getConnection();
+    }
+    return nullptr;
 }
 
 // 连接数据库
