@@ -1,0 +1,195 @@
+services:
+  # MySQL主数据库服务
+  mysql-master:
+    image: mysql:8.0 # 使用 MySQL 8.0 官方镜像
+    container_name: chat_mysql_master
+    environment:
+      MYSQL_ROOT_PASSWORD: Sf523416&111
+      MYSQL_DATABASE: chat
+      MYSQL_USER: chatuser
+      MYSQL_PASSWORD: chatpass123
+    ports:
+      - "3306:3306"  # 将主机端口 3306 映射到容器端口 3306
+    volumes:
+      - mysql_master_data:/var/lib/mysql   # 数据持久化卷 使用命名卷 mysql_master_data 确保数据库数据在容器重启后不会丢失
+      - ./mysql-master.conf:/etc/mysql/conf.d/master.conf  # 挂载主库配置文件
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql # 初始化 SQL 脚本 目录中的 SQL 文件会在容器首次启动时自动执行，用于创建表结构、初始数据等
+    networks:
+      - chat_network # 连接到 chat_network 网络
+    restart: unless-stopped # 自动重启策略（除非手动停止）
+
+  # MySQL从数据库服务1
+  mysql-slave1:
+    image: mysql:8.0
+    container_name: chat_mysql_slave1
+    environment: # 环境变量与主库相同，确保用户和数据库一致
+      MYSQL_ROOT_PASSWORD: Sf523416&111
+      MYSQL_DATABASE: chat
+      MYSQL_USER: chatuser
+      MYSQL_PASSWORD: chatpass123
+    ports:
+      - "3307:3306" # 使用不同端口映射：主机 3307 → 容器 3306
+    volumes:
+      - mysql_slave1_data:/var/lib/mysql
+      - ./mysql-slave.conf:/etc/mysql/conf.d/slave.conf # 从库配置文件
+    networks:
+      - chat_network
+    restart: unless-stopped
+    depends_on:
+      - mysql-master # 确保主库先启动
+
+  # MySQL从数据库服务2  配置与 slave1 类似，但使用不同端口和数据卷
+  mysql-slave2:
+    image: mysql:8.0
+    container_name: chat_mysql_slave2
+    environment:
+      MYSQL_ROOT_PASSWORD: Sf523416&111
+      MYSQL_DATABASE: chat
+      MYSQL_USER: chatuser
+      MYSQL_PASSWORD: chatpass123
+    ports:
+      - "3308:3306"  # 主机 3308 → 容器 3306
+    volumes:
+      - mysql_slave2_data:/var/lib/mysql # 使用不同的数据卷
+      - ./mysql-slave.conf:/etc/mysql/conf.d/slave.conf
+    networks:
+      - chat_network
+    restart: unless-stopped
+    depends_on: #depends_on 确保从库在主库启动后再启动，但注意这不能保证主库完全就绪（MySQL 启动需要时间）
+      - mysql-master
+
+  # Redis服务
+  redis:
+    image: redis:7-alpine # 使用 Alpine Linux 版本的 Redis 7（轻量级）
+    container_name: chat_redis
+    ports:
+      - "6379:6379" # 标准 Redis 端口
+    volumes:
+      - redis_data:/data # Redis 数据持久化
+    networks:
+      - chat_network
+    restart: unless-stopped
+
+  # Kafka服务（可选） Kafka 使用 ZooKeeper 来管理集群元数据、领导者选举和消费者组管理
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: chat_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181 # ZooKeeper 客户端连接端口
+      ZOOKEEPER_TICK_TIME: 2000 # 心跳时间（毫秒）
+    networks:
+      - chat_network
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: chat_kafka
+    depends_on:
+      - zookeeper # 依赖 ZooKeeper 服务
+    ports:
+      - "9092:9092" # Kafka  broker 端口
+    environment:
+      KAFKA_BROKER_ID: 1 # Broker 的唯一标识符
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181 # 连接 ZooKeeper 的地址
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092 # 对外发布的服务地址
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1 # 偏移量主题的副本因子 设置为 1 是因为这是单节点 Kafka，生产环境应增加此值
+
+
+    networks:
+      - chat_network
+    restart: unless-stopped
+#在 Docker 网络中，服务可以通过容器名直接通信（如 kafka:9092）
+#通过创建三个相同配置但不同端口的实例，实现水平扩展
+  # 聊天服务器实例1
+  chat_server_1:
+    build:
+      context: . # 使用当前目录作为构建上下文
+      dockerfile: Dockerfile.server # 使用 Dockerfile.server 构建镜像,而不是使用预构建镜像
+    container_name: chat_server_1
+    depends_on: #通过环境变量传递配置，使容器与配置解耦
+      - mysql-master
+      - redis
+    ports:
+      - "6000:6000" # 将主机端口 6000 映射到容器端口 6000
+    environment:
+      - SERVER_PORT=6000 # 应用服务器监听端口
+      - MYSQL_HOST=mysql-master # MySQL 主机地址（使用容器名） 使用容器名（如 mysql-master）作为主机地址，Docker 会自动解析为正确的 IP
+      - REDIS_HOST=redis # Redis 主机地址
+      - KAFKA_HOST=kafka # Kafka 主机地址
+    networks:
+      - chat_network
+    restart: unless-stopped
+
+  # 聊天服务器实例2
+  chat_server_2:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: chat_server_2
+    depends_on:
+      - mysql-master
+      - redis
+    ports:
+      - "6001:6001"
+    environment:
+      - SERVER_PORT=6001
+      - MYSQL_HOST=mysql-master
+      - REDIS_HOST=redis
+      - KAFKA_HOST=kafka
+    networks:
+      - chat_network
+    restart: unless-stopped
+
+  # 聊天服务器实例3
+  chat_server_3:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: chat_server_3
+    depends_on:
+      - mysql-master
+      - redis
+    ports:
+      - "6002:6002"
+    environment:
+      - SERVER_PORT=6002
+      - MYSQL_HOST=mysql-master
+      - REDIS_HOST=redis
+      - KAFKA_HOST=kafka
+    networks:
+      - chat_network
+    restart: unless-stopped
+
+  # Nginx负载均衡器
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: chat_nginx
+    depends_on:
+      - chat_server_1
+      - chat_server_2
+      - chat_server_3
+    ports:
+      - "7000:7000" # 7000 端口用于客户端连接
+      - "8080:8080" # 8080 端口用于访问 Nginx 状态页面
+    networks:
+      - chat_network
+    restart: unless-stopped
+
+
+#卷和网络配置
+#使用命名卷而不是匿名卷，便于管理和备份
+#每个数据库实例有自己的数据卷，确保数据独立
+
+
+volumes:
+  mysql_master_data: # 主库数据卷
+  mysql_slave1_data: # 从库1数据卷
+  mysql_slave2_data: # 从库2数据卷
+  redis_data:  # Redis数据卷
+
+#chat_network 是一个桥接网络，允许容器间通信同时与主机隔离
+networks:
+  chat_network:
+    driver: bridge  # 使用桥接网络驱动 

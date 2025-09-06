@@ -7,8 +7,9 @@
 using namespace std;
 
 /*
-redis作为集群服务器通信的基于发布-订阅消息队列时，会遇到两个难搞的bug问题，参考我的博客详细描述：
-https://blog.csdn.net/QIANGWEIYUAN/article/details/97895611
+Redis.hpp 文件定义了一个 C++ 类，用于封装 Redis 的发布-订阅功能，
+特别是在集群聊天服务器中用于不同服务器实例之间的通信
+这里用于分布式通知推送：用户状态变化、系统事件分发
 */
 class Redis
 {

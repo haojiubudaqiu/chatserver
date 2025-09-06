@@ -2,6 +2,14 @@
 #include <iostream>
 using namespace std;
 
+/*
+双连接设计：发布和订阅分开，互不干扰。
+独立线程监听订阅消息：不会阻塞主线程，消息实时推送。
+回调机制：收到订阅消息后可以灵活分发、处理。
+高扩展性：支持多通道、多业务订阅，解耦系统之间的数据同步。
+*/
+
+
 Redis::Redis()
     : _publish_context(nullptr), _subcribe_context(nullptr)
 {
@@ -42,7 +50,8 @@ bool Redis::connect()
     thread t([&]() {
         observer_channel_message();
     });
-    t.detach();
+    //Redis 的订阅命令会阻塞线程，所以发布和订阅要分开连接，订阅消息要用独立线程异步处理。
+    t.detach();//让线程后台运行，不阻塞主线程。
 
     cout << "connect redis-server success!" << endl;
 
@@ -113,15 +122,16 @@ bool Redis::unsubscribe(int channel)
 void Redis::observer_channel_message()
 {
     redisReply *reply = nullptr;
+    //循环调用 redisGetReply 等待 Redis 服务器推送的订阅消息
     while (REDIS_OK == redisGetReply(this->_subcribe_context, (void **)&reply))
     {
-        // 订阅收到的消息是一个带三元素的数组
+        // 订阅收到的消息是一个带三元素的数组 第三个元素是消息内容，第二个元素是通道号。
         if (reply != nullptr && reply->element[2] != nullptr && reply->element[2]->str != nullptr)
         {
-            // 给业务层上报通道上发生的消息
+            // 收到消息后，调用 _notify_message_handler 回调，给业务层上报通道上发生的消息，通过回调机制让业务层自定义消息处理逻辑。
             _notify_message_handler(atoi(reply->element[1]->str) , reply->element[2]->str);
         }
-
+        //消息处理完及时释放回复对象
         freeReplyObject(reply);
     }
 

@@ -2,6 +2,7 @@
 #define GROUPMODEL_H
 
 #include "group.hpp"
+#include "cache_manager.h"
 #include <string>
 #include <vector>
 using namespace std;
@@ -10,6 +11,8 @@ using namespace std;
 class GroupModel
 {
 public:
+    GroupModel();
+    
     // 创建群组
     bool createGroup(Group &group);
     // 加入群组
@@ -18,6 +21,11 @@ public:
     vector<Group> queryGroups(int userid);
     // 根据指定的groupid查询群组用户id列表，除userid自己，主要用户群聊业务给群组其它成员群发消息
     vector<int> queryGroupUsers(int userid, int groupid);
+    // 根据群组ID查询群组信息
+    Group queryGroup(int groupid);
+
+private:
+    CacheManager* _cacheManager;
 };
 
 #endif

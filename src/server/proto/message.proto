@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package chat;
+
+//所有定义的消息都会被编译成各种编程语言（如 Go, Java, Python, C++ 等）的代码，用于序列化和反序列化网络传输的二进制数据。
+
+
+
+// 消息类型枚举，定义所有消息的“类型编号”，用于消息分发和区分协议种类。方便识别和路由
+enum MsgType {
+    INVALID_MSG = 0;
+    LOGIN_MSG = 1;
+    LOGIN_MSG_ACK = 2;
+    REG_MSG = 3;
+    REG_MSG_ACK = 4;
+    ONE_CHAT_MSG = 5;
+    ADD_FRIEND_MSG = 6;
+    CREATE_GROUP_MSG = 7;
+    ADD_GROUP_MSG = 8;
+    GROUP_CHAT_MSG = 9;
+    LOGINOUT_MSG = 10;
+}
+
+// 用户信息
+message User {
+    int32 id = 1;
+    string name = 2;
+    string password = 3;
+    string state = 4;
+}
+ 
+// 基础消息结构 所有消息的基础字段，便于统一管理。
+message BaseMessage {
+    MsgType msgid = 1;
+    int32 fromid = 2;
+    int32 toid = 3;
+    int64 time = 4;
+}
+
+// 登录消息
+message LoginRequest {
+    BaseMessage base = 1;
+    int32 id = 2;
+    string password = 3;
+}
+
+// 登录响应
+message LoginResponse {
+    BaseMessage base = 1;
+    int32 err_num = 2;
+    string errmsg = 3;
+    User user = 4;
+    repeated string offlinemsg = 5;
+    repeated User friends = 6;
+    repeated GroupInfo groups = 7;
+}
+
+// 注册消息
+message RegisterRequest {
+    BaseMessage base = 1;
+    string name = 2;
+    string password = 3;
+}
+
+// 注册响应
+message RegisterResponse {
+    BaseMessage base = 1;
+    int32 err_num = 2;
+    string errmsg = 3;
+    User user = 4;
+}
+
+// 一对一聊天消息
+message OneChatMessage {
+    BaseMessage base = 1;
+    string message = 2;
+}
+
+// 群组信息
+message GroupInfo {
+    int32 id = 1;
+    string groupname = 2;
+    string groupdesc = 3;
+    repeated GroupUser users = 4;
+}
+
+// 群组用户
+message GroupUser {
+    int32 id = 1;
+    string name = 2;
+    string state = 3;
+    string role = 4;
+}
+
+// 创建群组消息
+message CreateGroupRequest {
+    BaseMessage base = 1;
+    string groupname = 2;
+    string groupdesc = 3;
+}
+
+// 加入群组消息
+message AddGroupRequest {
+    BaseMessage base = 1;
+    int32 groupid = 2;
+}
+
+// 群聊消息
+message GroupChatMessage {
+    BaseMessage base = 1;
+    int32 groupid = 2;
+    string message = 3;
+}
+
+// 添加好友消息
+message AddFriendRequest {
+    BaseMessage base = 1;
+    int32 friendid = 2;
+}
+
+// 登出消息
+message LogoutRequest {
+    BaseMessage base = 1;
+}
