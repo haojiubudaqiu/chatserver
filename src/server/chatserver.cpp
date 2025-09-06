@@ -7,6 +7,7 @@
 //函数对象绑定器
 #include <functional>
 #include <string>
+#include "muduo/base/Logging.h"
 using namespace std;
 using namespace placeholders;//参数占位符
 

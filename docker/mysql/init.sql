@@ -58,11 +58,11 @@ INSERT INTO user (name, password, state) VALUES
 ('user3', 'pass789', 'offline')
 ON DUPLICATE KEY UPDATE name=name;
 
--- 创建索引优化查询性能
-CREATE INDEX idx_user_state ON user(state);
-CREATE INDEX idx_friend_userid ON friend(userid);
+-- 创建索引优化查询性能  索引通过牺牲少量的写入性能（因为写入数据时也要更新目录）和存储空间，来极大地提升查询速度。
+CREATE INDEX idx_user_state ON user(state); --加速“查询所有在线用户”这类操作。
+CREATE INDEX idx_friend_userid ON friend(userid); --加速“查询某用户的所有好友”和“查询谁把我加为好友”的操作。
 CREATE INDEX idx_friend_friendid ON friend(friendid);
-CREATE INDEX idx_groupuser_userid ON groupuser(userid);
+CREATE INDEX idx_groupuser_userid ON groupuser(userid); --加速“查询某用户加入的所有群”和“查询某群的所有成员”。
 CREATE INDEX idx_groupuser_groupid ON groupuser(groupid);
-CREATE INDEX idx_offlinemessage_userid ON offlinemessage(userid);
-CREATE INDEX idx_offlinemessage_created_at ON offlinemessage(created_at);
+CREATE INDEX idx_offlinemessage_userid ON offlinemessage(userid); --至关重要。用户登录时拉取离线消息，就是通过 userid 来查询的，这个索引能使其速度飞快。
+CREATE INDEX idx_offlinemessage_created_at ON offlinemessage(created_at); --可能用于清理过期离线消息的查询

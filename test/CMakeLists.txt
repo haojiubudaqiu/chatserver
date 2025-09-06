@@ -15,14 +15,18 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/src/server/proto
 )
 
+# 查找并编译proto文件
+file(GLOB ProtoFiles "${PROJECT_SOURCE_DIR}/src/server/proto/*.proto")
+protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${ProtoFiles})
+
 # Protobuf测试程序
-add_executable(protobuf_test protobuf_test.cpp)
+add_executable(protobuf_test protobuf_test.cpp ${PROTO_SRCS})
 target_link_libraries(protobuf_test 
     ${PROTOBUF_LIBRARIES}
 )
 
 # Protobuf处理器测试程序
-add_executable(protobuf_processor_test protobuf_processor_test.cpp)
+add_executable(protobuf_processor_test protobuf_processor_test.cpp ${PROTO_SRCS})
 target_link_libraries(protobuf_processor_test 
     ${PROTOBUF_LIBRARIES}
     muduo_net
@@ -46,4 +50,5 @@ target_link_libraries(performance_test
 
 # 添加测试目录
 add_subdirectory(testMuduo)
-add_subdirectory(testJson)
+# 注释掉testJson目录，因为缺少CMakeLists.txt文件
+# add_subdirectory(testJson)

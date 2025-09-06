@@ -1,0 +1,1 @@
+/usr/bin/c++  -g -pthread -Wall -Wextra -rdynamic CMakeFiles/redis_cache_test.dir/redis_cache_test.cpp.o -o /home/song/workspace/chatserver/bin/redis_cache_test   -L/usr/local/lib  -L/usr/lib64/mysql  -Wl,-rpath,/usr/local/lib:/usr/lib64/mysql -lhiredis 

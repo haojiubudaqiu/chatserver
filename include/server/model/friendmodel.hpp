@@ -2,9 +2,11 @@
 #define FRIENDMODEL_H
 
 #include "user.hpp"
-#include "cache_manager.h"
 #include <vector>
 using namespace std;
+
+// 前向声明
+class CacheManager;
 
 // 维护好友信息的操作接口方法
 class FriendModel

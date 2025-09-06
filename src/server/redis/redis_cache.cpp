@@ -3,6 +3,18 @@
 #include <sstream>
 #include <muduo/base/Logging.h>
 
+/*
+redis_cache.cpp 实现了 RedisCache 类，
+用于在 C++ 服务器端和 Redis 数据库进行高效的数据缓存交互。
+它封装了对 Redis 的连接、用户/好友/群组/状态/离线消息等常用功能的读写操作，
+是业务逻辑和 Redis 之间的桥梁。
+这个实现让 Redis 成为你的聊天服务器高效的内存数据库，所有和用户、好友、群组、状态、离线消息有关的数据都可以用极低延迟读写，
+大幅提升了系统响应速度和并发性能。代码结构清晰，扩展性和维护性很高，
+是实际项目中非常典型、实用的 Redis 缓存操作封装。
+*/
+
+
+
 RedisCache::RedisCache() : _context(nullptr) {}
 
 RedisCache::~RedisCache() {
@@ -11,6 +23,7 @@ RedisCache::~RedisCache() {
     }
 }
 
+//使用 C++ 局部静态变量创建全局唯一的 RedisCache 实例，方便整个项目统一调用缓存功能
 RedisCache* RedisCache::instance() {
     static RedisCache cache;
     return &cache;
@@ -37,7 +50,7 @@ bool RedisCache::connect() {
 bool RedisCache::setUser(const User& user) {
     if (_context == nullptr) return false;
     
-    // 使用hash存储用户信息
+    // 使用Redis 的hash存储用户信息
     std::string key = "user:" + std::to_string(user.getId());
     
     redisReply* reply = (redisReply*)redisCommand(_context, 
@@ -67,6 +80,7 @@ bool RedisCache::setUser(const User& user) {
 User RedisCache::getUser(int userId) {
     if (_context == nullptr) return User();
     
+    //从 Redis 用 HGETALL 取出用户所有字段，解析为 User 对象
     std::string key = "user:" + std::to_string(userId);
     
     redisReply* reply = (redisReply*)redisCommand(_context, "HGETALL %s", key.c_str());
@@ -98,6 +112,8 @@ User RedisCache::getUser(int userId) {
     return user;
 }
 
+
+//用于用户注销或信息变更时清理旧缓存，删除对应用户的缓存键，释放内存空间
 bool RedisCache::deleteUser(int userId) {
     if (_context == nullptr) return false;
     
@@ -113,6 +129,7 @@ bool RedisCache::deleteUser(int userId) {
     return true;
 }
 
+//写入好友列表
 bool RedisCache::setFriends(int userId, const std::vector<User>& friends) {
     if (_context == nullptr) return false;
     

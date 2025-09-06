@@ -2,7 +2,9 @@
 #define USERMODEL_H
 
 #include "user.hpp"
-#include "cache_manager.h"
+
+// 前向声明
+class CacheManager;
 
 // User表的数据操作类
 class UserModel {

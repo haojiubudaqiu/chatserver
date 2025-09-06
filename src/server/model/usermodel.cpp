@@ -1,5 +1,6 @@
 #include "usermodel.hpp"
 #include "db.h"
+#include "cache_manager.h"
 #include <iostream>
 using namespace std;
 

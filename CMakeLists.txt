@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.0)
 project(chat)
 
-# 启用C++11标准
-set(CMAKE_CXX_STANDARD 11)
+# 启用C++14标准以支持std::make_unique
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

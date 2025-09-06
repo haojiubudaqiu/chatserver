@@ -1,5 +1,6 @@
 #include "friendmodel.hpp"
 #include "db.h"
+#include "cache_manager.h"
 
 FriendModel::FriendModel() {
     _cacheManager = CacheManager::instance();

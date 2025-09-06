@@ -1,0 +1,1 @@
+/usr/bin/c++  -g -pthread -Wall -Wextra -rdynamic CMakeFiles/performance_test.dir/performance_test.cpp.o -o /home/song/workspace/chatserver/bin/performance_test   -L/usr/local/lib  -L/usr/lib64/mysql  -Wl,-rpath,/usr/local/lib:/usr/lib64/mysql -lprotobuf -lmuduo_net -lmuduo_base -lpthread 

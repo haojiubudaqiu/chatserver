@@ -2,7 +2,11 @@ syntax = "proto3";
 
 package chat;
 
-// 消息类型枚举
+//所有定义的消息都会被编译成各种编程语言（如 Go, Java, Python, C++ 等）的代码，用于序列化和反序列化网络传输的二进制数据。
+
+
+
+// 消息类型枚举，定义所有消息的“类型编号”，用于消息分发和区分协议种类。方便识别和路由
 enum MsgType {
     INVALID_MSG = 0;
     LOGIN_MSG = 1;
@@ -24,8 +28,8 @@ message User {
     string password = 3;
     string state = 4;
 }
-
-// 基础消息结构
+ 
+// 基础消息结构 所有消息的基础字段，便于统一管理。
 message BaseMessage {
     MsgType msgid = 1;
     int32 fromid = 2;
@@ -43,7 +47,7 @@ message LoginRequest {
 // 登录响应
 message LoginResponse {
     BaseMessage base = 1;
-    int32 errno = 2;
+    int32 err_num = 2;
     string errmsg = 3;
     User user = 4;
     repeated string offlinemsg = 5;
@@ -61,7 +65,7 @@ message RegisterRequest {
 // 注册响应
 message RegisterResponse {
     BaseMessage base = 1;
-    int32 errno = 2;
+    int32 err_num = 2;
     string errmsg = 3;
     User user = 4;
 }

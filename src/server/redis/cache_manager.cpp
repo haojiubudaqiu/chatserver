@@ -1,6 +1,26 @@
 #include "cache_manager.h"
 #include <muduo/base/Logging.h>
+#include "usermodel.hpp"
+#include "friendmodel.hpp"
+#include "groupmodel.hpp"
+#include "offlinemessagemodel.hpp"
 
+/*
+缓存管理层实现，
+它在数据库和Redis缓存之间提供了一个智能的中间层。
+CacheManager 类是一个高级缓存抽象层，它：
+
+封装了底层的数据模型操作（UserModel, FriendModel等）
+
+集成了Redis缓存功能
+
+实现了经典的"缓存-数据库"读写策略
+
+提供了统一的API给业务层使用
+*/
+
+
+//初始化所有数据模型对象，但Redis缓存对象初始化为nullptr（需要在init()中初始化）
 CacheManager::CacheManager() : _redisCache(nullptr) {
     _userModel = new UserModel();
     _friendModel = new FriendModel();
@@ -16,10 +36,11 @@ CacheManager::~CacheManager() {
 }
 
 CacheManager* CacheManager::instance() {
-    static CacheManager manager;
+    static CacheManager manager;//使用局部静态变量实现单例模式，线程安全
     return &manager;
 }
 
+//一般在服务器启动时调用一次，连接 Redis 缓存，如果失败则返回false。
 bool CacheManager::init() {
     _redisCache = RedisCache::instance();
     if (!_redisCache->connect()) {
@@ -29,6 +50,7 @@ bool CacheManager::init() {
     return true;
 }
 
+//把User对象存入 Redis 缓存。
 bool CacheManager::cacheUser(const User& user) {
     if (!_redisCache) return false;
     return _redisCache->setUser(user);
@@ -40,7 +62,7 @@ User CacheManager::getUser(int userId) {
     // 先从缓存获取
     User user = _redisCache->getUser(userId);
     if (user.getId() != 0) {
-        return user;
+        return user;// 缓存命中，直接返回
     }
     
     // 缓存未命中，从数据库获取
@@ -82,6 +104,7 @@ std::vector<User> CacheManager::getFriends(int userId) {
     return friends;
 }
 
+//用于主动使缓存失效
 bool CacheManager::invalidateFriends(int userId) {
     if (!_redisCache) return false;
     return _redisCache->deleteFriends(userId);

@@ -21,10 +21,10 @@ public:
     void setPwd(string pwd) { this->password = pwd; }
     void setState(string state) { this->state = state; }
 
-    int getId() { return this->id; }
-    string getName() { return this->name; }
-    string getPwd() { return this->password; }
-    string getState() { return this->state; }
+    int getId() const { return this->id; }
+    string getName() const { return this->name; }
+    string getPwd() const { return this->password; }
+    string getState() const { return this->state; }
 
 protected:
     int id;
