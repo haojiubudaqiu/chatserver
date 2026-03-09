@@ -1,0 +1,122 @@
+# Redis Sentinel High Availability Cluster Configuration
+# 使用方法: docker-compose -f docker-compose-redis-sentinel.yml up -d
+#
+# 架构:
+#   Redis Master: 6379 (主库，负责读写)
+#   Redis Slave1: 6380 (从库，负责读)
+#   Redis Slave2: 6381 (从库，负责读)
+#   Sentinel1: 26379 (哨兵1)
+#   Sentinel2: 26380 (哨兵2)
+#   Sentinel3: 26381 (哨兵3)
+
+version: '3.8'
+
+services:
+  # ==================== Redis 主库 ====================
+  redis-master:
+    image: redis:7-alpine
+    container_name: redis-master
+    command: redis-server --appendonly yes --save 900 1 --save 300 10 --save 60 10000
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-master-data:/data
+    networks:
+      - redis-network
+    restart: unless-stopped
+
+  # ==================== Redis 从库1 ====================
+  redis-slave1:
+    image: redis:7-alpine
+    container_name: redis-slave1
+    command: redis-server --appendonly yes --replicaof redis-master 6379
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-slave1-data:/data
+    networks:
+      - redis-network
+    depends_on:
+      - redis-master
+    restart: unless-stopped
+
+  # ==================== Redis 从库2 ====================
+  redis-slave2:
+    image: redis:7-alpine
+    container_name: redis-slave2
+    command: redis-server --appendonly yes --replicaof redis-master 6379
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis-slave2-data:/data
+    networks:
+      - redis-network
+    depends_on:
+      - redis-master
+    restart: unless-stopped
+
+  # ==================== Sentinel 1 ====================
+  redis-sentinel1:
+    image: redis:7-alpine
+    container_name: redis-sentinel1
+    command: redis-sentinel /etc/redis/sentinel.conf
+    ports:
+      - "26379:26379"
+    volumes:
+      - ./redis-sentinel1.conf:/etc/redis/sentinel.conf
+      - redis-sentinel1-data:/data
+    networks:
+      - redis-network
+    depends_on:
+      - redis-master
+      - redis-slave1
+      - redis-slave2
+    restart: unless-stopped
+
+  # ==================== Sentinel 2 ====================
+  redis-sentinel2:
+    image: redis:7-alpine
+    container_name: redis-sentinel2
+    command: redis-sentinel /etc/redis/sentinel.conf
+    ports:
+      - "26380:26379"
+    volumes:
+      - ./redis-sentinel2.conf:/etc/redis/sentinel.conf
+      - redis-sentinel2-data:/data
+    networks:
+      - redis-network
+    depends_on:
+      - redis-master
+      - redis-slave1
+      - redis-slave2
+    restart: unless-stopped
+
+  # ==================== Sentinel 3 ====================
+  redis-sentinel3:
+    image: redis:7-alpine
+    container_name: redis-sentinel3
+    command: redis-sentinel /etc/redis/sentinel.conf
+    ports:
+      - "26381:26379"
+    volumes:
+      - ./redis-sentinel3.conf:/etc/redis/sentinel.conf
+      - redis-sentinel3-data:/data
+    networks:
+      - redis-network
+    depends_on:
+      - redis-master
+      - redis-slave1
+      - redis-slave2
+    restart: unless-stopped
+
+volumes:
+  redis-master-data:
+  redis-slave1-data:
+  redis-slave2-data:
+  redis-sentinel1-data:
+  redis-sentinel2-data:
+  redis-sentinel3-data:
+
+networks:
+  redis-network:
+    driver: bridge

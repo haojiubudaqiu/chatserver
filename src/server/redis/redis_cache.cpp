@@ -1,6 +1,7 @@
 #include "redis_cache.h"
 #include <iostream>
 #include <sstream>
+#include <cstdarg>
 #include <muduo/base/Logging.h>
 
 /*
@@ -11,6 +12,9 @@ redis_cache.cpp 实现了 RedisCache 类，
 这个实现让 Redis 成为你的聊天服务器高效的内存数据库，所有和用户、好友、群组、状态、离线消息有关的数据都可以用极低延迟读写，
 大幅提升了系统响应速度和并发性能。代码结构清晰，扩展性和维护性很高，
 是实际项目中非常典型、实用的 Redis 缓存操作封装。
+支持两种连接模式：
+1. 直连模式：connect() 直接连接 Redis
+2. 哨兵模式：connectWithSentinel() 通过哨兵集群连接，支持高可用
 */
 
 
@@ -30,7 +34,6 @@ RedisCache* RedisCache::instance() {
 }
 
 bool RedisCache::connect() {
-    // 连接Redis服务器
     _context = redisConnect("127.0.0.1", 6379);
     if (nullptr == _context || _context->err) {
         if (_context) {
@@ -47,13 +50,63 @@ bool RedisCache::connect() {
     return true;
 }
 
-bool RedisCache::setUser(const User& user) {
-    if (_context == nullptr) return false;
+bool RedisCache::connectWithSentinel(const std::vector<std::string>& sentinelAddrs,
+                                     const std::string& masterName) {
+    sentinel_ = std::make_unique<RedisSentinel>(sentinelAddrs, masterName);
     
-    // 使用Redis 的hash存储用户信息
+    if (!sentinel_->connect()) {
+        LOG_ERROR << "Failed to connect to sentinel cluster";
+        return false;
+    }
+    
+    auto ctx = sentinel_->getMasterConnection();
+    if (!ctx) {
+        LOG_ERROR << "Failed to get master connection from sentinel";
+        return false;
+    }
+    
+    _context = ctx.get();
+    
+    sentinel_->setFailoverHandler([this](const std::string& newHost, int newPort) {
+        LOG_WARN << "Redis failover detected! New master: " << newHost << ":" << newPort;
+    });
+    
+    sentinel_->startListen();
+    
+    LOG_INFO << "Connect to Redis via Sentinel success! Master: " 
+             << sentinel_->getMasterHost() << ":" << sentinel_->getMasterPort();
+    return true;
+}
+
+redisContext* RedisCache::getContext() {
+    if (sentinel_) {
+        auto ctx = sentinel_->getMasterConnection();
+        if (ctx) {
+            return ctx.get();
+        }
+    }
+    return _context;
+}
+
+redisReply* RedisCache::executeCommand(const char* format, ...) {
+    redisContext* ctx = getContext();
+    if (!ctx) return nullptr;
+    
+    va_list args;
+    va_start(args, format);
+    redisReply* reply = (redisReply*)redisCommand(ctx, format, args);
+    va_end(args);
+    
+    return reply;
+}
+
+bool RedisCache::setUser(const User& user) {
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return false;
+    
     std::string key = "user:" + std::to_string(user.getId());
     
-    redisReply* reply = (redisReply*)redisCommand(_context, 
+    redisReply* reply = (redisReply*)redisCommand(ctx, 
         "HMSET %s id %d name %s password %s state %s", 
         key.c_str(), 
         user.getId(), 
@@ -68,8 +121,7 @@ bool RedisCache::setUser(const User& user) {
     
     freeReplyObject(reply);
     
-    // 设置过期时间30分钟
-    reply = (redisReply*)redisCommand(_context, "EXPIRE %s 1800", key.c_str());
+    reply = (redisReply*)redisCommand(ctx, "EXPIRE %s 1800", key.c_str());
     if (reply != nullptr) {
         freeReplyObject(reply);
     }
@@ -78,12 +130,12 @@ bool RedisCache::setUser(const User& user) {
 }
 
 User RedisCache::getUser(int userId) {
-    if (_context == nullptr) return User();
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return User();
     
-    //从 Redis 用 HGETALL 取出用户所有字段，解析为 User 对象
     std::string key = "user:" + std::to_string(userId);
     
-    redisReply* reply = (redisReply*)redisCommand(_context, "HGETALL %s", key.c_str());
+    redisReply* reply = (redisReply*)redisCommand(ctx, "HGETALL %s", key.c_str());
     if (reply == nullptr || reply->type != REDIS_REPLY_ARRAY) {
         if (reply) freeReplyObject(reply);
         return User();
@@ -91,7 +143,6 @@ User RedisCache::getUser(int userId) {
     
     User user;
     if (reply->elements >= 8) {
-        // 解析hash字段
         for (size_t i = 0; i < reply->elements; i += 2) {
             std::string field(reply->element[i]->str);
             std::string value(reply->element[i+1]->str);
@@ -113,13 +164,13 @@ User RedisCache::getUser(int userId) {
 }
 
 
-//用于用户注销或信息变更时清理旧缓存，删除对应用户的缓存键，释放内存空间
 bool RedisCache::deleteUser(int userId) {
-    if (_context == nullptr) return false;
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return false;
     
     std::string key = "user:" + std::to_string(userId);
     
-    redisReply* reply = (redisReply*)redisCommand(_context, "DEL %s", key.c_str());
+    redisReply* reply = (redisReply*)redisCommand(ctx, "DEL %s", key.c_str());
     if (reply == nullptr) {
         LOG_ERROR << "Failed to delete user cache for user id: " << userId;
         return false;
@@ -131,30 +182,28 @@ bool RedisCache::deleteUser(int userId) {
 
 //写入好友列表
 bool RedisCache::setFriends(int userId, const std::vector<User>& friends) {
-    if (_context == nullptr) return false;
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return false;
     
     std::string key = "friends:" + std::to_string(userId);
     
-    // 先删除旧的数据
-    redisReply* reply = (redisReply*)redisCommand(_context, "DEL %s", key.c_str());
+    redisReply* reply = (redisReply*)redisCommand(ctx, "DEL %s", key.c_str());
     if (reply != nullptr) {
         freeReplyObject(reply);
     }
     
-    // 添加好友列表
     for (const auto& friendUser : friends) {
         std::string friendData = std::to_string(friendUser.getId()) + ":" + 
                                 friendUser.getName() + ":" + 
                                 friendUser.getState();
         
-        reply = (redisReply*)redisCommand(_context, "RPUSH %s %s", key.c_str(), friendData.c_str());
+        reply = (redisReply*)redisCommand(ctx, "RPUSH %s %s", key.c_str(), friendData.c_str());
         if (reply != nullptr) {
             freeReplyObject(reply);
         }
     }
     
-    // 设置过期时间15分钟
-    reply = (redisReply*)redisCommand(_context, "EXPIRE %s 900", key.c_str());
+    reply = (redisReply*)redisCommand(ctx, "EXPIRE %s 900", key.c_str());
     if (reply != nullptr) {
         freeReplyObject(reply);
     }
@@ -163,11 +212,12 @@ bool RedisCache::setFriends(int userId, const std::vector<User>& friends) {
 }
 
 std::vector<User> RedisCache::getFriends(int userId) {
-    if (_context == nullptr) return std::vector<User>();
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return std::vector<User>();
     
     std::string key = "friends:" + std::to_string(userId);
     
-    redisReply* reply = (redisReply*)redisCommand(_context, "LRANGE %s 0 -1", key.c_str());
+    redisReply* reply = (redisReply*)redisCommand(ctx, "LRANGE %s 0 -1", key.c_str());
     if (reply == nullptr || reply->type != REDIS_REPLY_ARRAY) {
         if (reply) freeReplyObject(reply);
         return std::vector<User>();
@@ -197,11 +247,12 @@ std::vector<User> RedisCache::getFriends(int userId) {
 }
 
 bool RedisCache::deleteFriends(int userId) {
-    if (_context == nullptr) return false;
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return false;
     
     std::string key = "friends:" + std::to_string(userId);
     
-    redisReply* reply = (redisReply*)redisCommand(_context, "DEL %s", key.c_str());
+    redisReply* reply = (redisReply*)redisCommand(ctx, "DEL %s", key.c_str());
     if (reply == nullptr) {
         LOG_ERROR << "Failed to delete friends cache for user id: " << userId;
         return false;
@@ -212,12 +263,12 @@ bool RedisCache::deleteFriends(int userId) {
 }
 
 bool RedisCache::setGroup(const Group& group) {
-    if (_context == nullptr) return false;
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return false;
     
     std::string key = "group:" + std::to_string(group.getId());
     
-    // 使用hash存储群组基本信息
-    redisReply* reply = (redisReply*)redisCommand(_context, 
+    redisReply* reply = (redisReply*)redisCommand(ctx, 
         "HMSET %s id %d groupname %s groupdesc %s", 
         key.c_str(), 
         group.getId(), 
@@ -231,16 +282,13 @@ bool RedisCache::setGroup(const Group& group) {
     
     freeReplyObject(reply);
     
-    // 存储群组成员列表
     std::string membersKey = "group:members:" + std::to_string(group.getId());
     
-    // 先删除旧的成员数据
-    reply = (redisReply*)redisCommand(_context, "DEL %s", membersKey.c_str());
+    reply = (redisReply*)redisCommand(ctx, "DEL %s", membersKey.c_str());
     if (reply != nullptr) {
         freeReplyObject(reply);
     }
     
-    // 添加成员列表
     const std::vector<GroupUser>& users = group.getUsers();
     for (const auto& groupUser : users) {
         std::string memberData = std::to_string(groupUser.getId()) + ":" + 
@@ -248,19 +296,18 @@ bool RedisCache::setGroup(const Group& group) {
                                 groupUser.getState() + ":" + 
                                 groupUser.getRole();
         
-        reply = (redisReply*)redisCommand(_context, "RPUSH %s %s", membersKey.c_str(), memberData.c_str());
+        reply = (redisReply*)redisCommand(ctx, "RPUSH %s %s", membersKey.c_str(), memberData.c_str());
         if (reply != nullptr) {
             freeReplyObject(reply);
         }
     }
     
-    // 设置过期时间10分钟
-    reply = (redisReply*)redisCommand(_context, "EXPIRE %s 600", key.c_str());
+    reply = (redisReply*)redisCommand(ctx, "EXPIRE %s 600", key.c_str());
     if (reply != nullptr) {
         freeReplyObject(reply);
     }
     
-    reply = (redisReply*)redisCommand(_context, "EXPIRE %s 600", membersKey.c_str());
+    reply = (redisReply*)redisCommand(ctx, "EXPIRE %s 600", membersKey.c_str());
     if (reply != nullptr) {
         freeReplyObject(reply);
     }
@@ -269,13 +316,13 @@ bool RedisCache::setGroup(const Group& group) {
 }
 
 Group RedisCache::getGroup(int groupId) {
-    if (_context == nullptr) return Group();
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return Group();
     
     std::string key = "group:" + std::to_string(groupId);
     std::string membersKey = "group:members:" + std::to_string(groupId);
     
-    // 获取群组基本信息
-    redisReply* reply = (redisReply*)redisCommand(_context, "HGETALL %s", key.c_str());
+    redisReply* reply = (redisReply*)redisCommand(ctx, "HGETALL %s", key.c_str());
     if (reply == nullptr || reply->type != REDIS_REPLY_ARRAY) {
         if (reply) freeReplyObject(reply);
         return Group();
@@ -283,7 +330,6 @@ Group RedisCache::getGroup(int groupId) {
     
     Group group;
     if (reply->elements >= 6) {
-        // 解析hash字段
         for (size_t i = 0; i < reply->elements; i += 2) {
             std::string field(reply->element[i]->str);
             std::string value(reply->element[i+1]->str);
@@ -300,8 +346,7 @@ Group RedisCache::getGroup(int groupId) {
     
     freeReplyObject(reply);
     
-    // 获取群组成员列表
-    reply = (redisReply*)redisCommand(_context, "LRANGE %s 0 -1", membersKey.c_str());
+    reply = (redisReply*)redisCommand(ctx, "LRANGE %s 0 -1", membersKey.c_str());
     if (reply != nullptr && reply->type == REDIS_REPLY_ARRAY) {
         std::vector<GroupUser> members;
         for (size_t i = 0; i < reply->elements; i++) {
@@ -332,17 +377,18 @@ Group RedisCache::getGroup(int groupId) {
 }
 
 bool RedisCache::deleteGroup(int groupId) {
-    if (_context == nullptr) return false;
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return false;
     
     std::string key = "group:" + std::to_string(groupId);
     std::string membersKey = "group:members:" + std::to_string(groupId);
     
-    redisReply* reply = (redisReply*)redisCommand(_context, "DEL %s", key.c_str());
+    redisReply* reply = (redisReply*)redisCommand(ctx, "DEL %s", key.c_str());
     if (reply != nullptr) {
         freeReplyObject(reply);
     }
     
-    reply = (redisReply*)redisCommand(_context, "DEL %s", membersKey.c_str());
+    reply = (redisReply*)redisCommand(ctx, "DEL %s", membersKey.c_str());
     if (reply != nullptr) {
         freeReplyObject(reply);
     }
@@ -351,11 +397,12 @@ bool RedisCache::deleteGroup(int groupId) {
 }
 
 bool RedisCache::setUserStatus(int userId, const std::string& status) {
-    if (_context == nullptr) return false;
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return false;
     
     std::string key = "user:status:" + std::to_string(userId);
     
-    redisReply* reply = (redisReply*)redisCommand(_context, "SET %s %s", key.c_str(), status.c_str());
+    redisReply* reply = (redisReply*)redisCommand(ctx, "SET %s %s", key.c_str(), status.c_str());
     if (reply == nullptr) {
         LOG_ERROR << "Failed to set user status cache for user id: " << userId;
         return false;
@@ -363,8 +410,7 @@ bool RedisCache::setUserStatus(int userId, const std::string& status) {
     
     freeReplyObject(reply);
     
-    // 设置过期时间5分钟
-    reply = (redisReply*)redisCommand(_context, "EXPIRE %s 300", key.c_str());
+    reply = (redisReply*)redisCommand(ctx, "EXPIRE %s 300", key.c_str());
     if (reply != nullptr) {
         freeReplyObject(reply);
     }
@@ -373,11 +419,12 @@ bool RedisCache::setUserStatus(int userId, const std::string& status) {
 }
 
 std::string RedisCache::getUserStatus(int userId) {
-    if (_context == nullptr) return "";
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return "";
     
     std::string key = "user:status:" + std::to_string(userId);
     
-    redisReply* reply = (redisReply*)redisCommand(_context, "GET %s", key.c_str());
+    redisReply* reply = (redisReply*)redisCommand(ctx, "GET %s", key.c_str());
     if (reply == nullptr || reply->type != REDIS_REPLY_STRING) {
         if (reply) freeReplyObject(reply);
         return "";
@@ -389,11 +436,12 @@ std::string RedisCache::getUserStatus(int userId) {
 }
 
 bool RedisCache::deleteUserStatus(int userId) {
-    if (_context == nullptr) return false;
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return false;
     
     std::string key = "user:status:" + std::to_string(userId);
     
-    redisReply* reply = (redisReply*)redisCommand(_context, "DEL %s", key.c_str());
+    redisReply* reply = (redisReply*)redisCommand(ctx, "DEL %s", key.c_str());
     if (reply == nullptr) {
         LOG_ERROR << "Failed to delete user status cache for user id: " << userId;
         return false;
@@ -404,11 +452,12 @@ bool RedisCache::deleteUserStatus(int userId) {
 }
 
 bool RedisCache::setOfflineMsgCount(int userId, int count) {
-    if (_context == nullptr) return false;
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return false;
     
     std::string key = "offline:count:" + std::to_string(userId);
     
-    redisReply* reply = (redisReply*)redisCommand(_context, "SET %s %d", key.c_str(), count);
+    redisReply* reply = (redisReply*)redisCommand(ctx, "SET %s %d", key.c_str(), count);
     if (reply == nullptr) {
         LOG_ERROR << "Failed to set offline message count cache for user id: " << userId;
         return false;
@@ -416,8 +465,7 @@ bool RedisCache::setOfflineMsgCount(int userId, int count) {
     
     freeReplyObject(reply);
     
-    // 设置过期时间2分钟
-    reply = (redisReply*)redisCommand(_context, "EXPIRE %s 120", key.c_str());
+    reply = (redisReply*)redisCommand(ctx, "EXPIRE %s 120", key.c_str());
     if (reply != nullptr) {
         freeReplyObject(reply);
     }
@@ -426,23 +474,44 @@ bool RedisCache::setOfflineMsgCount(int userId, int count) {
 }
 
 int RedisCache::getOfflineMsgCount(int userId) {
-    if (_context == nullptr) return 0;
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return 0;
     
     std::string key = "offline:count:" + std::to_string(userId);
     
-    redisReply* reply = (redisReply*)redisCommand(_context, "GET %s", key.c_str());
+    redisReply* reply = (redisReply*)redisCommand(ctx, "GET %s", key.c_str());
     if (reply == nullptr || reply->type != REDIS_REPLY_STRING) {
-        if (reply) freeReplyObject(reply);
-        return 0;
+        if (reply) freeReply        return 0;
     }
     
+Object(reply);
     int count = std::stoi(reply->str);
     freeReplyObject(reply);
     return count;
 }
 
+std::string RedisCache::getMasterAddr() const {
+    if (sentinel_) {
+        return sentinel_->getMasterHost() + ":" + std::to_string(sentinel_->getMasterPort());
+    }
+    return "127.0.0.1:6379";
+}
+
 bool RedisCache::deleteOfflineMsgCount(int userId) {
-    if (_context == nullptr) return false;
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return false;
+    
+    std::string key = "offline:count:" + std::to_string(userId);
+    
+    redisReply* reply = (redisReply*)redisCommand(ctx, "DEL %s", key.c_str());
+    if (reply == nullptr) {
+        LOG_ERROR << "Failed to delete offline message count cache for user id: " << userId;
+        return false;
+    }
+    
+    freeReplyObject(reply);
+    return true;
+}
     
     std::string key = "offline:count:" + std::to_string(userId);
     

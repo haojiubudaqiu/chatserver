@@ -20,6 +20,7 @@
 #include <vector>
 #include "user.hpp" //定义了用户和群组的数据结构。
 #include "group.hpp"
+#include "redis_sentinel.h"
 
 // Redis缓存类
 class RedisCache {
@@ -27,8 +28,17 @@ public:
     //提供一个全局唯一实例
     static RedisCache* instance();
     
-    // 连接Redis服务器
+    // 连接Redis服务器（直连模式）
     bool connect();
+    
+    // 连接Redis服务器（哨兵模式）
+    // sentinelAddrs: 哨兵地址列表
+    // masterName: 主库名称（默认 mymaster）
+    bool connectWithSentinel(const std::vector<std::string>& sentinelAddrs,
+                           const std::string& masterName = "mymaster");
+    
+    // 检查是否使用哨兵模式
+    bool isUsingSentinel() const { return sentinel_ != nullptr; }
     
     // 设置用户信息缓存 把用户信息写入 Redis（比如注册、修改信息时）。
     bool setUser(const User& user);
@@ -75,15 +85,27 @@ public:
     // 删除离线消息计数缓存 清理未读消息计数缓存。
     bool deleteOfflineMsgCount(int userId);
 
+    // 获取当前主库地址
+    std::string getMasterAddr() const;
+
 private:
     RedisCache();
     ~RedisCache();
+    
+    // 获取Redis连接上下文
+    redisContext* getContext();
+    
+    // 执行Redis命令的辅助方法
+    redisReply* executeCommand(const char* format, ...);
     
     // Redis连接上下文
     redisContext* _context;
     
     // 连接锁 互斥锁，确保多线程安全访问 Redis 连接。
     std::mutex _mutex;
+    
+    // 哨兵客户端（用于高可用）
+    std::unique_ptr<RedisSentinel> sentinel_;
 };
 
 #endif

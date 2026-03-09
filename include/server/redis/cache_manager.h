@@ -29,6 +29,18 @@ public:
     // 初始化缓存管理器，比如连接 Redis，初始化各数据模型等。一般在服务器启动时调用一次。
     bool init();
     
+    // 使用哨兵模式初始化缓存管理器（高可用）
+    // sentinelAddrs: 哨兵地址列表
+    // masterName: 主库名称（默认 mymaster）
+    bool initWithSentinel(const std::vector<std::string>& sentinelAddrs,
+                         const std::string& masterName = "mymaster");
+    
+    // 检查是否使用哨兵模式
+    bool isUsingSentinel() const;
+    
+    // 获取当前 Redis 主库地址
+    std::string getRedisMasterAddr() const;
+    
     // 用户相关缓存操作
     bool cacheUser(const User& user); //将用户信息存入缓存（比如用户登录、修改信息后）
     User getUser(int userId); //从缓存获取指定用户的信息（比查数据库快很多）。

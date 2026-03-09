@@ -47,7 +47,29 @@ bool CacheManager::init() {
         LOG_ERROR << "Failed to connect to Redis cache";
         return false;
     }
+    LOG_INFO << "Redis cache initialized (direct connection)";
     return true;
+}
+
+bool CacheManager::initWithSentinel(const std::vector<std::string>& sentinelAddrs,
+                                   const std::string& masterName) {
+    _redisCache = RedisCache::instance();
+    if (!_redisCache->connectWithSentinel(sentinelAddrs, masterName)) {
+        LOG_ERROR << "Failed to connect to Redis via Sentinel";
+        return false;
+    }
+    LOG_INFO << "Redis cache initialized (Sentinel mode)";
+    return true;
+}
+
+bool CacheManager::isUsingSentinel() const {
+    if (!_redisCache) return false;
+    return _redisCache->isUsingSentinel();
+}
+
+std::string CacheManager::getRedisMasterAddr() const {
+    if (!_redisCache) return "";
+    return _redisCache->getMasterAddr();
 }
 
 //把User对象存入 Redis 缓存。
