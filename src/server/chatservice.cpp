@@ -6,8 +6,6 @@
 #include <vector>
 using namespace std;
 using namespace muduo;
-#include "json.hpp"
-using json = nlohmann::json;
 
 // 获取单例对象的接口函数
 ChatService *ChatService::instance()
@@ -19,8 +17,13 @@ ChatService *ChatService::instance()
 // 构造函数，注册消息以及对应的Handler回调操作
 ChatService::ChatService() : _kafkaManager(nullptr), _kafkaConsumerThread(nullptr)
 {   
-    // 初始化缓存管理器
-    CacheManager::instance()->init();
+    // 初始化缓存管理器 (Redis Sentinel模式)
+    std::vector<std::string> sentinelAddrs = {
+        "127.0.0.1:26379",
+        "127.0.0.1:26380",
+        "127.0.0.1:26381"
+    };
+    CacheManager::instance()->initWithSentinel(sentinelAddrs, "mymaster");
     
     // 初始化Kafka管理器
     _kafkaManager = KafkaManager::instance();
@@ -44,24 +47,6 @@ void ChatService::reset()
 {
     // 把online状态的用户，设置成offline
     _userModel.resetState();
-}
-
-// 获取消息对应的处理器
-// 注意：这个函数在protobuf版本中不再使用，保留是为了兼容性
-auto ChatService::getHandler(int msgid) -> MsgHandler
-{
-    // 返回一个默认的处理器
-    return [=](const TcpConnectionPtr &conn, json &js, Timestamp) {
-        if (!conn->connected()) return;
-        
-        json response;
-        response["msgid"] = LOGIN_MSG_ACK; // 使用已有的消息类型
-        response["errno"] = 404;
-        response["errmsg"] = "Invalid message type";
-        conn->send(response.dump());
-        
-        LOG_ERROR << "Invalid msgid: " << msgid;
-    };
 }
 
 

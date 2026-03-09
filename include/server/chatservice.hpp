@@ -17,13 +17,7 @@ using namespace muduo::net;
 #include "offlinemessagemodel.hpp"
 #include "message.pb.h"
 #include "proto_msg_handler.h"
-#include "proto_msg_processor.h"
 #include "kafka_manager.h"
-#include "json.hpp"
-using json = nlohmann::json;
-
-// 表示处理消息的事件回调方法类型,用using给已经存在的类型定义一个新的名称
-using MsgHandler = std::function<void(const TcpConnectionPtr &conn, json &js, Timestamp)>;
 
 // 聊天服务器业务类
 class ChatService
@@ -51,8 +45,6 @@ public:
     void clientCloseException(const TcpConnectionPtr &conn);
     // 服务器异常，业务重置方法
     void reset();
-    // 获取消息对应的处理器
-    MsgHandler getHandler(int msgid);
     // 从redis消息队列中获取订阅的消息
     void handleRedisSubscribeMessage(int, string);
     // 从Kafka消息队列中获取订阅的消息

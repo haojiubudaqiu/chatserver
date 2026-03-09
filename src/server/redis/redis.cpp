@@ -61,7 +61,7 @@ bool Redis::connect()
 // 向redis指定的通道channel发布消息
 bool Redis::publish(int channel, string message)
 {
-    redisReply *reply = (redisReply *)redisCommand(_publish_context, "PUBLISH %d %s", channel, message.c_str());
+    redisReply *reply = (redisReply *)redisCommand(_publish_context, "PUBLISH %d %b", channel, message.data(), message.size());
     if (nullptr == reply)
     {
         cerr << "publish command failed!" << endl;
@@ -129,7 +129,7 @@ void Redis::observer_channel_message()
         if (reply != nullptr && reply->element[2] != nullptr && reply->element[2]->str != nullptr)
         {
             // 收到消息后，调用 _notify_message_handler 回调，给业务层上报通道上发生的消息，通过回调机制让业务层自定义消息处理逻辑。
-            _notify_message_handler(atoi(reply->element[1]->str) , reply->element[2]->str);
+            _notify_message_handler(atoi(reply->element[1]->str) , string(reply->element[2]->str, reply->element[2]->len));
         }
         //消息处理完及时释放回复对象
         freeReplyObject(reply);

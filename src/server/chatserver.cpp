@@ -58,8 +58,7 @@ void ChatServer::onMessage(const TcpConnectionPtr &conn,
         auto msgHandler = ProtoMsgHandlerMap::instance()->getHandler(baseMsg.msgid());
         msgHandler(conn, buf, time);
     } else {
-        // 如果不是Protobuf消息，可以尝试解析为JSON（向后兼容）
-        // 这里为了简化，我们只处理Protobuf消息
+        // 解析失败
         LOG_ERROR << "Failed to parse message as Protobuf";
         
         if (conn->connected()) {
