@@ -67,6 +67,12 @@ public:
     // 从连接池中获取一个可用的数据库连接（包装在智能指针中，无需手动管理生命周期）
     static std::shared_ptr<MySQL> getConnectionFromPool();
     
+    // 设置数据库配置
+    static void setDBConfig(const std::string& master, int masterPort,
+                           const std::string& slaves,
+                           const std::string& user, const std::string& password, 
+                           const std::string& dbname);
+    
 private:
     // 成员变量
     MYSQL *_conn;// 核心成员：指向一个MySQL连接结构的指针，所有操作都通过它进行。

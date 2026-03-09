@@ -1,0 +1,93 @@
+# MySQL 主从复制集群配置
+# 使用方法: docker-compose -f docker-compose-mysql-master-slave.yml up -d
+# 
+# 架构:
+#   mysql-master (主库) : 3306
+#   mysql-slave1 (从库1) : 3307  
+#   mysql-slave2 (从库2) : 3308
+
+services:
+  # ==================== MySQL 主库 ====================
+  mysql-master:
+    image: mysql:8.0
+    container_name: chat_mysql_master
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: chat
+      MYSQL_USER: chatuser
+      MYSQL_PASSWORD: chatpass123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_master_data:/var/lib/mysql
+      - ./docker/mysql/master.cnf:/etc/mysql/conf.d/master.cnf
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - chat_network
+    restart: unless-stopped
+    command: --server-id=1 --log-bin=mysql-bin --binlog-format=ROW --gtid-mode=ON --enforce-gtid-consistency=ON
+
+  # ==================== MySQL 从库1 ====================
+  mysql-slave1:
+    image: mysql:8.0
+    container_name: chat_mysql_slave1
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: chat
+      MYSQL_USER: chatuser
+      MYSQL_PASSWORD: chatpass123
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_slave1_data:/var/lib/mysql
+      - ./docker/mysql/slave1.cnf:/etc/mysql/conf.d/slave.cnf
+    networks:
+      - chat_network
+    restart: unless-stopped
+    depends_on:
+      - mysql-master
+    command: --server-id=2 --log-bin=mysql-bin --relay-log=relay-bin --binlog-format=ROW --gtid-mode=ON --enforce-gtid-consistency=ON --read-only=1 --super-read-only=1
+
+  # ==================== MySQL 从库2 ====================
+  mysql-slave2:
+    image: mysql:8.0
+    container_name: chat_mysql_slave2
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: chat
+      MYSQL_USER: chatuser
+      MYSQL_PASSWORD: chatpass123
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql_slave2_data:/var/lib/mysql
+      - ./docker/mysql/slave2.cnf:/etc/mysql/conf.d/slave.cnf
+    networks:
+      - chat_network
+    restart: unless-stopped
+    depends_on:
+      - mysql-master
+    command: --server-id=3 --log-bin=mysql-bin --relay-log=relay-bin --binlog-format=ROW --gtid-mode=ON --enforce-gtid-consistency=ON --read-only=1 --super-read-only=1
+
+  # ==================== Redis 服务 ====================
+  redis:
+    image: redis:7-alpine
+    container_name: chat_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - chat_network
+    restart: unless-stopped
+    command: redis-server --appendonly yes --save 900 1 --save 300 10 --save 60 10000
+
+volumes:
+  mysql_master_data:
+  mysql_slave1_data:
+  mysql_slave2_data:
+  redis_data:
+
+networks:
+  chat_network:
+    driver: bridge

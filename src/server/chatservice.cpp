@@ -83,7 +83,8 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
     int id = loginReq.id();
     const string& pwd = loginReq.password();
 
-    User user = _userModel.query(id);
+    // 登录时强制读主库，避免主从延迟导致登录失败
+    User user = _userModel.query(id, true);
     if (user.getId() == id && user.getPwd() == pwd)
     {
         if (user.getState() == "online")

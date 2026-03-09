@@ -2,10 +2,16 @@
 #include <muduo/base/Logging.h>
 #include <mysql/mysql.h>
 #include <sstream>
+#include <thread>
 
 
  // 构造函数初始化列表：设置默认端口和最大连接数，将原子计数器归零。
-ConnectionPool::ConnectionPool() : port_(3306), masterMaxSize_(10), slaveMaxSize_(10), currentSlaveIndex_(0) {}
+ConnectionPool::ConnectionPool() : port_(3306), masterMaxSize_(10), slaveMaxSize_(10), currentSlaveIndex_(0),
+    masterAvailable_(true), healthCheckInterval_(30) {
+    // 初始化从库可用状态
+    slaveAvailable_.resize(1);
+    slaveAvailable_[0] = true;
+}
 
 ConnectionPool::~ConnectionPool() {
     // 清理主库连接
@@ -112,6 +118,16 @@ std::shared_ptr<MySQL> ConnectionPool::getConnection() {
 }
 
 std::shared_ptr<MySQL> ConnectionPool::getMasterConnection() {
+    // 检查主库是否可用
+    if (!masterAvailable_) {
+        LOG_ERROR << "Master database is unavailable!";
+        // 主库不可用时，尝试使用从库
+        if (!slaveServers_.empty()) {
+            LOG_WARN << "Falling back to slave for write operation";
+            return getSlaveConnection();
+        }
+        // 没有从库时，仍然尝试连接主库（可能有网络抖动）
+    }
     
     // 1. 获取锁：unique_lock在构造时加锁，析构时自动解锁。
     //    它比lock_guard更灵活，可以和条件变量配合。
@@ -123,7 +139,10 @@ std::shared_ptr<MySQL> ConnectionPool::getMasterConnection() {
         // 注意：这里是在锁内创建连接！创建连接是耗时操作，会阻塞其他线程，这是一个可以优化的点。
         auto conn = createConnection(MySQL::MASTER, masterServer_);
         if (conn) {
+            masterAvailable_ = true;
             return conn;// 如果创建成功，直接返回这个新连接
+        } else {
+            masterAvailable_ = false;
         }
     }
     
@@ -142,6 +161,11 @@ std::shared_ptr<MySQL> ConnectionPool::getMasterConnection() {
     if (conn && mysql_ping(conn->getConnection()) != 0) {
         // 连接已断开，创建新连接
         conn = createConnection(MySQL::MASTER, masterServer_);
+        if (!conn) {
+            masterAvailable_ = false;
+        }
+    } else {
+        masterAvailable_ = true;
     }
 
     // STEP 6: 返回连接 (锁会在return时通过lock的析构函数自动释放)
@@ -154,38 +178,62 @@ std::shared_ptr<MySQL> ConnectionPool::getSlaveConnection() {
         return getMasterConnection();
     }
     
-    std::unique_lock<std::mutex> lock(slaveMutex_);
+    const int maxRetries = 3;
+    int retryCount = 0;
     
-    // 轮询选择一个从库 使用原子变量 currentSlaveIndex_ 来保证线程安全地递增。
-    size_t slaveIndex = currentSlaveIndex_++ % slaveServers_.size();
-    
-    // 如果连接池为空且未达到最大连接数，创建新连接
-    if (slaveConnections_[slaveIndex].empty() && 
-        slaveConnections_[slaveIndex].size() < static_cast<size_t>(slaveMaxSize_)) {
-        auto conn = createConnection(MySQL::SLAVE, slaveServers_[slaveIndex]);
-        if (conn) {
-            slaveConnections_[slaveIndex].push(conn);
-            auto result = conn;
+    while (retryCount < maxRetries) {
+        // 轮询选择一个从库
+        size_t slaveIndex = currentSlaveIndex_++ % slaveServers_.size();
+        
+        // 检查从库是否可用
+        if (!slaveAvailable_[slaveIndex]) {
+            retryCount++;
+            LOG_WARN << "Slave " << slaveIndex << " is unavailable, trying next...";
+            continue;
+        }
+        
+        {
+            std::unique_lock<std::mutex> lock(slaveMutex_);
+            
+            // 如果连接池为空且未达到最大连接数，创建新连接
+            if (slaveConnections_[slaveIndex].empty() && 
+                slaveConnections_[slaveIndex].size() < static_cast<size_t>(slaveMaxSize_)) {
+                auto conn = createConnection(MySQL::SLAVE, slaveServers_[slaveIndex]);
+                if (conn) {
+                    slaveConnections_[slaveIndex].push(conn);
+                    auto result = conn;
+                    slaveConnections_[slaveIndex].pop();
+                    return result;
+                }
+            }
+            
+            // 等待可用连接
+            while (slaveConnections_[slaveIndex].empty()) {
+                slaveCondition_.wait(lock);
+            }
+            
+            auto conn = slaveConnections_[slaveIndex].front();
             slaveConnections_[slaveIndex].pop();
-            return result;
+            
+            // 检查连接是否仍然有效
+            if (conn && mysql_ping(conn->getConnection()) != 0) {
+                // 连接已断开，创建新连接
+                conn = createConnection(MySQL::SLAVE, slaveServers_[slaveIndex]);
+                if (!conn) {
+                    slaveAvailable_[slaveIndex] = false;
+                    LOG_ERROR << "Failed to create connection to slave " << slaveIndex;
+                    retryCount++;
+                    continue;
+                }
+            }
+            
+            return conn;
         }
     }
     
-    // 等待可用连接
-    while (slaveConnections_[slaveIndex].empty()) {
-        slaveCondition_.wait(lock);
-    }
-    
-    auto conn = slaveConnections_[slaveIndex].front();
-    slaveConnections_[slaveIndex].pop();
-    
-    // 检查连接是否仍然有效
-    if (conn && mysql_ping(conn->getConnection()) != 0) {
-        // 连接已断开，创建新连接
-        conn = createConnection(MySQL::SLAVE, slaveServers_[slaveIndex]);
-    }
-    
-    return conn;
+    // 所有从库都故障，回退到主库
+    LOG_WARN << "All slaves unavailable, falling back to master";
+    return getMasterConnection();
 }
 
 std::shared_ptr<MySQL> ConnectionPool::getConnection(MySQL::DBRole role) {
@@ -250,4 +298,65 @@ size_t ConnectionPool::slaveSize() const {
         total += queue.size();
     }
     return total;
+}
+
+void ConnectionPool::startHealthCheck(int intervalSeconds) {
+    healthCheckInterval_ = intervalSeconds;
+    running_ = true;
+    healthCheckThread_ = std::thread([this]() {
+        while (running_) {
+            std::this_thread::sleep_for(std::chrono::seconds(healthCheckInterval_));
+            if (!running_) break;
+            performHealthCheck();
+        }
+    });
+    LOG_INFO << "Health check thread started, interval: " << healthCheckInterval_ << "s";
+}
+
+void ConnectionPool::stopHealthCheck() {
+    running_ = false;
+    if (healthCheckThread_.joinable()) {
+        healthCheckThread_.join();
+    }
+    LOG_INFO << "Health check thread stopped";
+}
+
+void ConnectionPool::performHealthCheck() {
+    // 检查主库
+    {
+        std::lock_guard<std::mutex> lock(masterMutex_);
+        if (!masterConnections_.empty()) {
+            auto conn = masterConnections_.front();
+            if (conn && mysql_ping(conn->getConnection()) != 0) {
+                if (masterAvailable_) {
+                    masterAvailable_ = false;
+                    LOG_ERROR << "Health check: Master database unavailable!";
+                }
+            } else {
+                if (!masterAvailable_) {
+                    masterAvailable_ = true;
+                    LOG_INFO << "Health check: Master database recovered!";
+                }
+            }
+        }
+    }
+    
+    // 检查从库
+    std::lock_guard<std::mutex> lock(slaveMutex_);
+    for (size_t i = 0; i < slaveConnections_.size(); ++i) {
+        if (!slaveConnections_[i].empty()) {
+            auto conn = slaveConnections_[i].front();
+            if (conn && mysql_ping(conn->getConnection()) != 0) {
+                if (slaveAvailable_[i]) {
+                    slaveAvailable_[i] = false;
+                    LOG_ERROR << "Health check: Slave " << i << " unavailable!";
+                }
+            } else {
+                if (!slaveAvailable_[i]) {
+                    slaveAvailable_[i] = true;
+                    LOG_INFO << "Health check: Slave " << i << " recovered!";
+                }
+            }
+        }
+    }
 }

@@ -85,6 +85,35 @@ public:
     // 获取从库连接池大小
     size_t slaveSize() const;
     
+    // 启动健康检查线程
+    void startHealthCheck(int intervalSeconds = 30);
+    
+    // 停止健康检查线程
+    void stopHealthCheck();
+    
+    // 执行一次健康检查
+    void performHealthCheck();
+    
+    // 获取主库可用状态
+    bool isMasterAvailable() const { return masterAvailable_; }
+    
+    // 获取指定从库可用状态
+    bool isSlaveAvailable(size_t index) const {
+        if (index < slaveAvailable_.size()) {
+            return slaveAvailable_[index];
+        }
+        return false;
+    }
+    
+    // 获取可用从库数量
+    size_t getAvailableSlaveCount() const {
+        size_t count = 0;
+        for (const auto& available : slaveAvailable_) {
+            if (available) count++;
+        }
+        return count;
+    }
+    
 private:
 
     // 构造函数和析构函数私有化，防止外部创建和销毁实例，这是单例模式的关键。    
@@ -115,6 +144,13 @@ private:
     std::condition_variable slaveCondition_;  // 从库池的条件变量
     std::vector<std::queue<std::shared_ptr<MySQL>>> slaveConnections_; // 每个从库对应一个空闲连接队列
     std::atomic<size_t> currentSlaveIndex_;// 原子计数器，用于实现轮询算法
+    
+    // 健康检查相关
+    std::atomic<bool> masterAvailable_;  // 主库是否可用
+    std::vector<std::atomic<bool>> slaveAvailable_;  // 每个从库是否可用
+    int healthCheckInterval_;  // 健康检查间隔（秒）
+    std::thread healthCheckThread_;  // 健康检查线程
+    bool running_;  // 运行标志
 };
 
 #endif

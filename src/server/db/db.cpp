@@ -1,19 +1,37 @@
 #include "db.h"
 #include "connection_pool.h"
+#include "database_router.h"
 #include <muduo/base/Logging.h>
 
 
-
-
-// 数据库配置信息
-static string master_server = "127.0.0.1";// 主库地址
-static string slave_servers = "127.0.0.1:3307,127.0.0.1:3308";// 从库地址列表，用逗号分隔
+// 数据库配置信息 - 支持主库+多从库
+static string master_server = "127.0.0.1";
+static int master_port = 3306;
+static string slave_servers = "127.0.0.1:3307,127.0.0.1:3308"; // 多个从库用逗号分隔
 static string user = "root";
-static string password = "Sf523416&111";
+static string password = "123456";
 static string dbname = "chat";
 
 // 连接池标志
 bool MySQL::useConnectionPool = false;
+
+// 设置数据库配置
+void setDBConfig(const string& master, int masterPort,
+                 const string& slaves, 
+                 const string& user_, const string& password_, 
+                 const string& dbname_) {
+    master_server = master;
+    master_port = masterPort;
+    slave_servers = slaves;
+    user = user_;
+    password = password_;
+    dbname = dbname_;
+}
+
+// 获取主库配置
+string getMasterServer() { return master_server; }
+int getMasterPort() { return master_port; }
+string getSlaveServers() { return slave_servers; }
 
 // 初始化数据库连接
 MySQL::MySQL(DBRole role)
@@ -35,11 +53,43 @@ MySQL::~MySQL()
 bool MySQL::initConnectionPool(const std::string& server, const std::string& user,
                               const std::string& password, const std::string& dbname,
                               int port, int maxSize) {
-    // 将使用连接池的标志设为 true
     useConnectionPool = true;
-    // 调用 ConnectionPool 单例的 init 方法进行初始化。
-    // 这里暗示存在一个 ConnectionPool 类，并且它有一个 instance() 方法返回单例对象。
-    return ConnectionPool::instance()->init(server, user, password, dbname, port, maxSize);
+    
+    // 更新全局配置
+    master_server = server;
+    master_port = port;
+    ::user = user;
+    ::password = password;
+    ::dbname = dbname;
+    
+    // 初始化主库连接池
+    ConnectionPool::instance()->initMaster(server, user, password, dbname, port, maxSize);
+    
+    // 解析从库配置并初始化从库连接池
+    vector<string> slaveAddrs;
+    size_t pos = 0;
+    string servers = slave_servers;
+    string delimiter = ",";
+    while ((pos = servers.find(delimiter)) != string::npos) {
+        string slave = servers.substr(0, pos);
+        if (!slave.empty()) {
+            slaveAddrs.push_back(slave);
+        }
+        servers.erase(0, pos + delimiter.length());
+    }
+    if (!servers.empty()) {
+        slaveAddrs.push_back(servers);
+    }
+    
+    // 如果配置了从库，初始化从库连接池
+    if (!slaveAddrs.empty()) {
+        ConnectionPool::instance()->initSlaves(slaveAddrs, user, password, dbname, 3306, maxSize * 2);
+    }
+    
+    LOG_INFO << "Connection pool initialized: master=" << server << ":" << port 
+             << ", slaves=" << slaveAddrs.size();
+    
+    return true;
 }
 
 // 从连接池获取连接

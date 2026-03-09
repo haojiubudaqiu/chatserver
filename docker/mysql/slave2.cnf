@@ -1,0 +1,31 @@
+[mysqld]
+# Server ID，必须唯一（每个从库不同）
+server-id=3
+
+# 启用二进制日志
+log-bin=mysql-bin
+
+# 中继日志
+relay-log=relay-bin
+
+# 行级复制
+binlog-format=ROW
+
+# GTID 模式
+gtid-mode=ON
+enforce-gtid-consistency=ON
+
+# 只读模式
+read-only=1
+super-read-only=1
+
+# 字符集
+character-set-server=utf8mb4
+collation-server=utf8mb4_unicode_ci
+
+# 允许从库连接
+bind-address=0.0.0.0
+
+# 半同步复制配置
+plugin-load=rpl_semi_sync_slave=semisync_slave.so
+rpl_semi_sync_slave_enabled=1
