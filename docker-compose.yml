@@ -70,6 +70,36 @@ services:
       - chat_network
     restart: unless-stopped
 
+  # Redis 从节点 1
+  redis-slave1:
+    image: redis:7-alpine
+    container_name: chat_redis_slave1
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_slave1_data:/data
+    command: redis-server --replicaof chat_redis 6379
+    depends_on:
+      - redis
+    networks:
+      - chat_network
+    restart: unless-stopped
+
+  # Redis 从节点 2
+  redis-slave2:
+    image: redis:7-alpine
+    container_name: chat_redis_slave2
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_slave2_data:/data
+    command: redis-server --replicaof chat_redis 6379
+    depends_on:
+      - redis
+    networks:
+      - chat_network
+    restart: unless-stopped
+
   # Redis Sentinel 1
   redis-sentinel1:
     image: redis:7-alpine
@@ -222,6 +252,8 @@ volumes:
   mysql_slave1_data:
   mysql_slave2_data:
   redis_data:
+  redis_slave1_data:
+  redis_slave2_data:
 
 networks:
   chat_network:
