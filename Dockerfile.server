@@ -1,10 +1,9 @@
-# 聊天服务器Dockerfile
-FROM ubuntu:20.04
+# 聊天服务器 - 多阶段构建
+# 阶段1: 构建
+FROM ubuntu:20.04 AS builder
 
-# 设置环境变量
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 安装依赖
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -15,21 +14,36 @@ RUN apt-get update && apt-get install -y \
     libboost-all-dev \
     libssl-dev \
     wget \
+    librdkafka-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 创建工作目录
-WORKDIR /app
+WORKDIR /build
 
-# 复制源代码
 COPY . .
 
-# 编译项目
 RUN mkdir -p build && cd build && \
     cmake .. && \
     make -j$(nproc)
 
-# 暴露端口
+# 阶段2: 运行 - 使用更小的基础镜像
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    libmysqlclient-dev \
+    libhiredis-dev \
+    libprotobuf-dev \
+    libboost-all-dev \
+    libssl-dev \
+    librdkafka-dev \
+    libstdc++6 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder /build/bin ./bin
+
 EXPOSE 6000
 
-# 设置启动命令
 CMD ["./bin/ChatServer", "0.0.0.0", "6000"]
