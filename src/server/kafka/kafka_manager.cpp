@@ -1,5 +1,6 @@
 #include "kafka_manager.h"
 #include <muduo/base/Logging.h>
+#include <thread>
 
 // 构造函数体为空，所有初始化工作在成员初始化列表中完成
 KafkaManager::KafkaManager() {}
@@ -103,4 +104,51 @@ void KafkaManager::setMessageCallback(std::function<void(const std::string& topi
         // 为每个消费者设置回调函数
         pair.second->setMessageCallback(callback);
     }
+}
+
+// 初始化并启动消费者线程
+void KafkaManager::initConsumers(const std::vector<std::string>& topics) {
+    for (const auto& topic : topics) {
+        // 获取或创建消费者
+        KafkaConsumer* consumer = getConsumer(topic);
+        if (consumer == nullptr) {
+            LOG_ERROR << "Failed to get Kafka consumer for topic: " << topic;
+            continue;
+        }
+        
+        // 设置消息回调
+        consumer->setMessageCallback(messageCallback_);
+        
+        // 订阅主题
+        if (!consumer->subscribe(topic)) {
+            LOG_ERROR << "Failed to subscribe to Kafka topic: " << topic;
+            continue;
+        }
+        
+        // 启动消费者线程
+        consumerThreads_.emplace_back([consumer]() {
+            consumer->startConsume();
+        });
+        
+        LOG_INFO << "Started Kafka consumer for topic: " << topic;
+    }
+}
+
+// 停止所有消费者
+void KafkaManager::stopConsumers() {
+    for (auto& consumerPair : consumers_) {
+        if (consumerPair.second) {
+            consumerPair.second->stopConsume();
+        }
+    }
+    
+    // 等待所有线程结束
+    for (auto& t : consumerThreads_) {
+        if (t.joinable()) {
+            t.join();
+        }
+    }
+    
+    consumerThreads_.clear();
+    LOG_INFO << "All Kafka consumers stopped";
 }

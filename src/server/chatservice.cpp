@@ -29,15 +29,19 @@ ChatService::ChatService() : _kafkaManager(nullptr), _kafkaConsumerThread(nullpt
     _kafkaManager = KafkaManager::instance();
     _kafkaManager->init("localhost:9092");
     
-    // 连接redis服务器
+    // 设置Kafka消息回调
+    _kafkaManager->setMessageCallback(std::bind(&ChatService::handleKafkaMessage, this, _1, _2));
+    
+    // 初始化Kafka消费者并启动线程
+    std::vector<std::string> topics = {"user_messages", "group_messages"};
+    _kafkaManager->initConsumers(topics);
+    
+    // 连接redis服务器 (用于用户在线状态管理)
     if (_redis.connect())
     {
         // 设置上报消息的回调
         _redis.init_notify_handler(std::bind(&ChatService::handleRedisSubscribeMessage, this, _1, _2));
     }
-    
-    // 设置Kafka消息回调
-    _kafkaManager->setMessageCallback(std::bind(&ChatService::handleKafkaMessage, this, _1, _2));
 }
 
 //对类的方法进行实现
@@ -488,12 +492,38 @@ void ChatService::handleRedisSubscribeMessage(int userid, string msg)
 void ChatService::handleKafkaMessage(const string& topic, const string& message) {
     LOG_INFO << "Received Kafka message on topic: " << topic;
     
-    // 直接转发protobuf消息
-    lock_guard<mutex> lock(_connMutex);
-    // 解析基础消息以获取目标用户ID
+    // 解析基础消息
     chat::BaseMessage baseMsg;
-    if (baseMsg.ParseFromString(message)) {
+    if (!baseMsg.ParseFromString(message)) {
+        LOG_ERROR << "Failed to parse Kafka protobuf message";
+        return;
+    }
+    
+    // 根据主题类型处理不同的消息
+    if (topic == "group_messages") {
+        // 群组消息 - 需要解析群ID并转发给所有群成员
+        chat::GroupChatMessage groupMsg;
+        if (!groupMsg.ParseFromString(message)) {
+            LOG_ERROR << "Failed to parse group message from Kafka";
+            return;
+        }
+        
+        int groupid = groupMsg.groupid();
+        vector<int> useridVec = _groupModel.queryGroupUsers(baseMsg.fromid(), groupid);
+        
+        lock_guard<mutex> lock(_connMutex);
+        for (int id : useridVec) {
+            auto it = _userConnMap.find(id);
+            if (it != _userConnMap.end()) {
+                it->second->send(message);
+            } else {
+                _offlineMsgModel.insert(id, message);
+            }
+        }
+    } else {
+        // 用户消息 - 直接转发给目标用户
         int targetUserId = baseMsg.toid();
+        lock_guard<mutex> lock(_connMutex);
         auto it = _userConnMap.find(targetUserId);
         if (it != _userConnMap.end()) {
             // 用户在线，直接转发消息
@@ -502,7 +532,5 @@ void ChatService::handleKafkaMessage(const string& topic, const string& message)
             // 用户不在线，存储离线消息
             _offlineMsgModel.insert(targetUserId, message);
         }
-    } else {
-        LOG_ERROR << "Failed to parse Kafka protobuf message";
     }
 }

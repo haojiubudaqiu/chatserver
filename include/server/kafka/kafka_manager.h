@@ -29,6 +29,13 @@ public:
     // 回调函数参数: topic-消息来源主题, message-消息内容
     void setMessageCallback(std::function<void(const std::string& topic, const std::string& message)> callback);
     
+    // 初始化并启动消费者线程
+    // topics: 要订阅的主题列表
+    void initConsumers(const std::vector<std::string>& topics);
+    
+    // 停止所有消费者
+    void stopConsumers();
+    
 private:
     KafkaManager();
     ~KafkaManager();
@@ -43,6 +50,8 @@ private:
     std::unordered_map<std::string, std::unique_ptr<KafkaConsumer>> consumers_;
     // 消息回调函数对象，当消费者收到消息时调用
     std::function<void(const std::string& topic, const std::string& message)> messageCallback_;
+    // 消费者线程列表
+    std::vector<std::thread> consumerThreads_;
 };
 
 #endif
