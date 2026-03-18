@@ -222,17 +222,77 @@ make
 ./bin/ChatServer 127.0.0.1 6002
 ```
 
-### Docker容器化部署
+### Docker容器化部署（推荐）
+
+#### 快速启动（一行命令启动整个集群）
+
 ```bash
-# 构建所有服务
-docker-compose build
+# 进入项目目录
+cd /path/to/chatserver
 
-# 启动所有服务
-docker-compose up -d
-
-# 查看服务状态
-docker-compose ps
+# 启动所有服务（首次启动会自动拉取镜像）
+docker-compose -f docker-compose.yml up -d
 ```
+
+#### Docker启动的服务详情
+
+| 类型 | 服务名称 | 端口 | 说明 |
+|------|----------|------|------|
+| **MySQL集群** | mysql-master | 3306 | MySQL主库（写操作） |
+| | mysql-slave1 | 3307 | MySQL从库1（读操作） |
+| | mysql-slave2 | 3308 | MySQL从库2（读操作） |
+| **Redis集群** | redis | 6379 | Redis主节点 |
+| | redis-slave1 | 6380 | Redis从节点1 |
+| | redis-slave2 | 6381 | Redis从节点2 |
+| | redis-sentinel1 | 26379 | 哨兵1（高可用） |
+| | redis-sentinel2 | 26380 | 哨兵2（高可用） |
+| | redis-sentinel3 | 26381 | 哨兵3（高可用） |
+| **消息队列** | zookeeper | 2181 | ZooKeeper（Kafka依赖） |
+| | kafka | 9092 | Kafka消息队列 |
+| **聊天服务器** | chat_server_1 | 6000 | 聊天服务器实例1 |
+| | chat_server_2 | 6001 | 聊天服务器实例2 |
+| | chat_server_3 | 6002 | 聊天服务器实例3 |
+| **负载均衡** | nginx | 7000 | TCP负载均衡入口 |
+| | nginx | 8080 | HTTP管理界面 |
+
+**共计启动15个Docker容器**，所有依赖服务已配置好，服务器程序已编译完成，容器启动后自动运行。
+
+#### 后续启动（重启后）
+
+只需执行一条命令即可再次启动整个集群：
+
+```bash
+docker-compose -f docker-compose.yml up -d
+```
+
+Docker会自动：
+1. 启动所有15个容器
+2. chat_server容器自动运行ChatServer程序
+3. 所有服务自动互联互通
+
+#### 常用操作命令
+
+```bash
+# 查看所有容器运行状态
+docker ps
+
+# 查看服务日志
+docker-compose -f docker-compose.yml logs -f
+
+# 查看特定服务日志（如chat_server_1）
+docker logs -f chat_server_1
+
+# 停止所有服务
+docker-compose -f docker-compose.yml down
+
+# 重启特定服务
+docker restart chat_server_1
+```
+
+#### 客户端连接方式
+
+- **直接连接**：连接 `<Linux服务器IP>:6000` 或 `6001` 或 `6002`
+- **负载均衡连接**：连接 `<Linux服务器IP>:7000`（Nginx会自动分发到某个服务器）
 
 ## 性能指标
 
