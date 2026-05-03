@@ -1,1 +1,0 @@
-/usr/bin/c++  -g -pthread -Wall -Wextra -rdynamic CMakeFiles/ChatClient.dir/client_proto.cpp.o CMakeFiles/ChatClient.dir/main.cpp.o CMakeFiles/ChatClient.dir/message.pb.cc.o -o /home/song/workspace/chatserver/bin/ChatClient   -L/usr/local/lib  -L/usr/lib64/mysql  -Wl,-rpath,/usr/local/lib:/usr/lib64/mysql -lmuduo_net -lmuduo_base -lpthread -lprotobuf 

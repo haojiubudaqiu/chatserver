@@ -1,1 +1,0 @@
-/usr/bin/c++  -g -pthread -Wall -Wextra -rdynamic CMakeFiles/protobuf_processor_test.dir/protobuf_processor_test.cpp.o CMakeFiles/protobuf_processor_test.dir/message.pb.cc.o -o /home/song/workspace/chatserver/bin/protobuf_processor_test   -L/usr/local/lib  -L/usr/lib64/mysql  -Wl,-rpath,/usr/local/lib:/usr/lib64/mysql -lprotobuf -lmuduo_net -lmuduo_base 

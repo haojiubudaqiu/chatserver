@@ -29,3 +29,7 @@ bind-address=0.0.0.0
 # 半同步复制配置（从库端）
 plugin-load=rpl_semi_sync_slave=semisync_slave.so
 rpl_semi_sync_slave_enabled=1
+
+# 主从复制配置
+master-info-repository=TABLE
+relay-log-info-repository=TABLE

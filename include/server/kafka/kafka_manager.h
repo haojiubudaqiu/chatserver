@@ -14,7 +14,9 @@ public:
     static KafkaManager* instance();
     
     // 初始化Kafka管理器
-    bool init(const std::string& brokers);
+    // brokers: Kafka地址
+    // groupId: 消费者组ID（每个服务器使用不同的groupId实现广播）
+    bool init(const std::string& brokers, const std::string& groupId = "chat_server_group");
     
     // 获取生产者实例
     KafkaProducer* getProducer(const std::string& topic);
@@ -41,12 +43,11 @@ private:
     ~KafkaManager();
     
     std::string brokers_;
+    std::string groupId_;  // 消费者组ID
 
     // 主题到生产者实例的映射表
-    // 使用unique_ptr自动管理KafkaProducer的生命周期
     std::unordered_map<std::string, std::unique_ptr<KafkaProducer>> producers_;
     // 主题到消费者实例的映射表
-    // 使用unique_ptr自动管理KafkaConsumer的生命周期
     std::unordered_map<std::string, std::unique_ptr<KafkaConsumer>> consumers_;
     // 消息回调函数对象，当消费者收到消息时调用
     std::function<void(const std::string& topic, const std::string& message)> messageCallback_;

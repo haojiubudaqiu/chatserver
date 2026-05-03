@@ -1,0 +1,31 @@
+# Build output
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Compiled object files
+*.o
+*.obj
+*.exe
+
+# CMake generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Binary output
+bin/
+
+# Logs
+*.log
+
+# Resources / MCP artifacts
+resources/

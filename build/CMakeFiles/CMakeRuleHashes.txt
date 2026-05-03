@@ -1,4 +1,0 @@
-# Hashes of file build rules.
-52bae22bd64346a17115da0c9a4c863e src/client/message.pb.h
-20e8f1c5035414dc4fa0d3ef355568bd src/server/message.pb.h
-f277ca3f066db21089d4f1ac1b7e4ab4 test/message.pb.h

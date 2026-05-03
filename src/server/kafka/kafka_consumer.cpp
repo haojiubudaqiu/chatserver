@@ -8,8 +8,8 @@
 
 
 
-KafkaConsumer::KafkaConsumer(const std::string& brokers, const std::string& topic) 
-    : brokers_(brokers), topic_(topic), consumer_(nullptr), running_(false) {}
+KafkaConsumer::KafkaConsumer(const std::string& brokers, const std::string& topic, const std::string& groupId) 
+    : brokers_(brokers), topic_(topic), groupId_(groupId), consumer_(nullptr), running_(false) {}
 
 KafkaConsumer::~KafkaConsumer() {
 #ifndef HAS_LIBRDKAFKA
@@ -39,8 +39,8 @@ bool KafkaConsumer::init() {
         return false;
     }
     
-    // 设置消费者组ID
-    if (rd_kafka_conf_set(conf, "group.id", "chat_server_group", errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK) {
+    // 设置消费者组ID（每个服务器使用不同的groupId实现广播）
+    if (rd_kafka_conf_set(conf, "group.id", groupId_.c_str(), errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK) {
         LOG_ERROR << "Failed to set consumer group ID: " << errstr;
         rd_kafka_conf_destroy(conf);
         return false;

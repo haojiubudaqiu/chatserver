@@ -4,6 +4,7 @@
 #include "cache_manager.h"
 #include <muduo/base/Logging.h>
 #include <vector>
+#include <cstdlib>
 using namespace std;
 using namespace muduo;
 
@@ -25,9 +26,22 @@ ChatService::ChatService() : _kafkaManager(nullptr), _kafkaConsumerThread(nullpt
     };
     CacheManager::instance()->initWithSentinel(sentinelAddrs, "mymaster");
     
+    // 连接redis服务器 (用于用户在线状态管理)
+    if (_redis.connect())
+    {
+        // 设置上报消息的回调
+        _redis.init_notify_handler(std::bind(&ChatService::handleRedisSubscribeMessage, this, _1, _2));
+    }
+    
     // 初始化Kafka管理器
+    // 每个服务器实例使用不同的groupId实现广播
+    // 同一groupId下消息只被一个消费者消费，不同groupId可以收到同一条消息
+    char* serverPort = getenv("SERVER_PORT");
+    std::string groupId = serverPort ? 
+        std::string("chat_server_group_") + serverPort : 
+        std::string("chat_server_group_default");
     _kafkaManager = KafkaManager::instance();
-    _kafkaManager->init("localhost:9092");
+    _kafkaManager->init("localhost:9092", groupId);
     
     // 设置Kafka消息回调
     _kafkaManager->setMessageCallback(std::bind(&ChatService::handleKafkaMessage, this, _1, _2));
@@ -35,13 +49,6 @@ ChatService::ChatService() : _kafkaManager(nullptr), _kafkaConsumerThread(nullpt
     // 初始化Kafka消费者并启动线程
     std::vector<std::string> topics = {"user_messages", "group_messages"};
     _kafkaManager->initConsumers(topics);
-    
-    // 连接redis服务器 (用于用户在线状态管理)
-    if (_redis.connect())
-    {
-        // 设置上报消息的回调
-        _redis.init_notify_handler(std::bind(&ChatService::handleRedisSubscribeMessage, this, _1, _2));
-    }
 }
 
 //对类的方法进行实现
@@ -326,32 +333,34 @@ void ChatService::oneChat(const TcpConnectionPtr &conn, const string &data, Time
 
     int fromid = chatMsg.base().fromid();
     int toid = chatMsg.base().toid();
+    string serializedMsg = chatMsg.SerializeAsString();
 
     {
         lock_guard<mutex> lock(_connMutex);
         auto it = _userConnMap.find(toid);
         if (it != _userConnMap.end())
         {
-            // toid在线，转发消息   服务器主动推送消息给toid用户
-            it->second->send(chatMsg.SerializeAsString());
+            // toid在线且在本服务器，转发消息
+            it->second->send(serializedMsg);
             return;
         }
     }
 
-    // 查询toid是否在线 
+    // 查询toid是否在线
     User user = _userModel.query(toid);
     if (user.getState() == "online")
     {
-        // 使用Kafka发送消息而不是Redis
-        // 直接转发protobuf消息
+        // 用户在线但不在本服务器，通过Kafka广播消息
+        // 由于每个服务器使用不同的groupId，所有服务器都会收到这条消息
+        // 收到消息的服务器会在自己的_userConnMap中查找目标用户
         if (_kafkaManager) {
-            _kafkaManager->sendMessage("user_messages", chatMsg.SerializeAsString());
+            _kafkaManager->sendMessage("user_messages", serializedMsg);
         }
         return;
     }
 
     // toid不在线，存储离线消息
-    _offlineMsgModel.insert(toid, chatMsg.SerializeAsString());
+    _offlineMsgModel.insert(toid, serializedMsg);
 }
 
 // 添加好友业务 msgid id friendid
@@ -441,35 +450,28 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
 
     int fromid = groupChatMsg.base().fromid();
     int groupid = groupChatMsg.groupid();
-    vector<int> useridVec = _groupModel.queryGroupUsers(fromid, groupid);
+    string serializedMsg = groupChatMsg.SerializeAsString();
 
-    lock_guard<mutex> lock(_connMutex);
-    for (int id : useridVec)
+    // 先在本地查找在线用户并直接转发
+    vector<int> useridVec = _groupModel.queryGroupUsers(fromid, groupid);
+    
     {
-        auto it = _userConnMap.find(id);
-        if (it != _userConnMap.end())
+        lock_guard<mutex> lock(_connMutex);
+        for (int id : useridVec)
         {
-            // 转发群消息
-            it->second->send(groupChatMsg.SerializeAsString());
-        }
-        else
-        {
-            // 查询toid是否在线 
-            User user = _userModel.query(id);
-            if (user.getState() == "online")
+            auto it = _userConnMap.find(id);
+            if (it != _userConnMap.end())
             {
-                // 使用Kafka发送消息而不是Redis
-                // 直接转发protobuf消息
-                if (_kafkaManager) {
-                    _kafkaManager->sendMessage("group_messages", groupChatMsg.SerializeAsString());
-                }
-            }
-            else
-            {
-                // 存储离线群消息
-                _offlineMsgModel.insert(id, groupChatMsg.SerializeAsString());
+                // 该用户在本地服务器，直接转发
+                it->second->send(serializedMsg);
             }
         }
+    }
+
+    // 通过Kafka广播消息，让所有服务器查询自己的_userConnMap并转发
+    // 由于每个服务器使用不同的groupId，所有服务器都会收到这条消息
+    if (_kafkaManager) {
+        _kafkaManager->sendMessage("group_messages", serializedMsg);
     }
 }
 

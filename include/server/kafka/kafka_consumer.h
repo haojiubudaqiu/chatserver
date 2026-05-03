@@ -9,7 +9,10 @@
 // 这是一个Kafka消息队列消费者的C++封装类
 class KafkaConsumer {
 public:
-    KafkaConsumer(const std::string& brokers, const std::string& topic);
+    // brokers: Kafka集群地址
+    // topic: 默认订阅主题
+    // groupId: 消费者组ID（每个服务器使用不同的groupId实现广播）
+    KafkaConsumer(const std::string& brokers, const std::string& topic, const std::string& groupId = "chat_server_group");
     ~KafkaConsumer();
     
     // 初始化Kafka消费者
@@ -31,13 +34,12 @@ public:
     void stopConsume();
     
 private:
-    std::string brokers_;// 存储Kafka集群地址列表
-    std::string topic_;// 存储默认主题名称
-    void* consumer_;  // 实际应该是rd_kafka_t*类型，实际实现时应使用rd_kafka_t*类型，但这里用void*保持库中立性
-
-    // 消息回调函数对象，当收到消息时调用
+    std::string brokers_;  // Kafka集群地址
+    std::string topic_;    // 默认订阅主题
+    std::string groupId_;  // 消费者组ID
+    void* consumer_;       // rd_kafka_t*类型
     std::function<void(const std::string& topic, const std::string& message)> messageCallback_;
-    bool running_;// 标志位，表示消费者是否正在运行
+    bool running_;         // 运行标志
 };
 
 #endif

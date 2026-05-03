@@ -18,13 +18,11 @@ KafkaManager* KafkaManager::instance() {
 }
 
 // 初始化Kafka管理器
-bool KafkaManager::init(const std::string& brokers) {
-    // 存储Kafka集群地址
+bool KafkaManager::init(const std::string& brokers, const std::string& groupId) {
+    // 存储Kafka集群地址和消费者组ID
     brokers_ = brokers;
-    LOG_INFO << "KafkaManager initialized with brokers: " << brokers;
-    // 返回初始化成功
-    // 注意：这里只是存储了brokers地址，没有真正测试连接
-    // 实际的生产者和消费者会在第一次使用时才创建和初始化
+    groupId_ = groupId;
+    LOG_INFO << "KafkaManager initialized with brokers: " << brokers << ", groupId: " << groupId;
     return true;
 }
 
@@ -61,14 +59,11 @@ KafkaConsumer* KafkaManager::getConsumer(const std::string& topic) {
     // 检查是否已存在该主题的消费者
     auto it = consumers_.find(topic);
     if (it != consumers_.end()) {
-        // 返回找到的消费者指针
-        // 使用unique_ptr的get()方法获取原始指针
         return it->second.get();
     }
     
-    // 创建新的消费者
-    // 使用make_unique创建KafkaConsumer实例，并传入brokers_和topic参数
-    std::unique_ptr<KafkaConsumer> consumer = std::make_unique<KafkaConsumer>(brokers_, topic);
+    // 创建新的消费者（使用groupId_实现广播）
+    std::unique_ptr<KafkaConsumer> consumer = std::make_unique<KafkaConsumer>(brokers_, topic, groupId_);
     
     if (!consumer->init()) {
         LOG_ERROR << "Failed to initialize Kafka consumer for topic: " << topic;

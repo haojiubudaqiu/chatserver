@@ -1,1 +1,0 @@
-/usr/bin/c++  -g -pthread -Wall -Wextra;-g -rdynamic CMakeFiles/server.dir/muduoServer.cpp.o -o /home/song/workspace/chatserver/bin/server   -L/usr/local/lib  -L/usr/lib64/mysql  -Wl,-rpath,/usr/local/lib:/usr/lib64/mysql -lmuduo_net -lmuduo_base -lpthread 

@@ -1,1 +1,0 @@
-/usr/bin/c++  -g -pthread -Wall -Wextra -rdynamic CMakeFiles/protobuf_test.dir/protobuf_test.cpp.o CMakeFiles/protobuf_test.dir/message.pb.cc.o -o /home/song/workspace/chatserver/bin/protobuf_test   -L/usr/local/lib  -L/usr/lib64/mysql  -Wl,-rpath,/usr/local/lib:/usr/lib64/mysql -lprotobuf 
