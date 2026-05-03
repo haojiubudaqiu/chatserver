@@ -15,10 +15,8 @@ ChatService *ChatService::instance()
     return &service;
 }
 
-// 构造函数，注册消息以及对应的Handler回调操作
-ChatService::ChatService() : _kafkaManager(nullptr), _kafkaConsumerThread(nullptr)
+ChatService::ChatService()
 {   
-    // 初始化缓存管理器 (Redis Sentinel模式)
     std::vector<std::string> sentinelAddrs = {
         "127.0.0.1:26379",
         "127.0.0.1:26380",
@@ -26,27 +24,16 @@ ChatService::ChatService() : _kafkaManager(nullptr), _kafkaConsumerThread(nullpt
     };
     CacheManager::instance()->initWithSentinel(sentinelAddrs, "mymaster");
     
-    // 连接redis服务器 (用于用户在线状态管理)
-    if (_redis.connect())
-    {
-        // 设置上报消息的回调
-        _redis.init_notify_handler(std::bind(&ChatService::handleRedisSubscribeMessage, this, _1, _2));
-    }
+    _kafkaManager = KafkaManager::instance();
     
-    // 初始化Kafka管理器
-    // 每个服务器实例使用不同的groupId实现广播
-    // 同一groupId下消息只被一个消费者消费，不同groupId可以收到同一条消息
     char* serverPort = getenv("SERVER_PORT");
     std::string groupId = serverPort ? 
         std::string("chat_server_group_") + serverPort : 
         std::string("chat_server_group_default");
-    _kafkaManager = KafkaManager::instance();
     _kafkaManager->init("localhost:9092", groupId);
     
-    // 设置Kafka消息回调
     _kafkaManager->setMessageCallback(std::bind(&ChatService::handleKafkaMessage, this, _1, _2));
     
-    // 初始化Kafka消费者并启动线程
     std::vector<std::string> topics = {"user_messages", "group_messages"};
     _kafkaManager->initConsumers(topics);
 }
@@ -100,9 +87,6 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
                 lock_guard<mutex> lock(_connMutex);
                 _userConnMap.insert({id, conn});
             }
-
-            // id用户登录成功后，向redis订阅channel(id)
-            _redis.subscribe(id); 
 
             // 登录成功，更新用户状态信息 state offline=>online
             user.setState("online");
@@ -278,9 +262,6 @@ void ChatService::loginout(const TcpConnectionPtr &conn, const string &data, Tim
         }
     }
 
-    // 用户注销，相当于就是下线，在redis中取消订阅通道
-    _redis.unsubscribe(userid); 
-
     // 更新用户的状态信息
     User user(userid, "", "", "offline");
     _userModel.updateState(user);
@@ -304,9 +285,6 @@ void ChatService::clientCloseException(const TcpConnectionPtr &conn)
             }
         }
     }
-
-    // 用户注销，相当于就是下线，在redis中取消订阅通道
-    _redis.unsubscribe(user.getId()); 
 
     // 更新用户的状态信息
     if (user.getId() != -1)
@@ -433,14 +411,11 @@ void ChatService::addGroup(const TcpConnectionPtr &conn, const string &data, Tim
     _groupModel.addGroup(userid, groupid, "normal");
 }
 
-// 群组聊天业务
 void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Timestamp time)
 {
-    // 解析Protobuf消息
     chat::GroupChatMessage groupChatMsg;
     if (!groupChatMsg.ParseFromString(data)) {
         LOG_ERROR << "Failed to parse GroupChatMessage message";
-        // 发送错误响应
         chat::BaseMessage errorMsg;
         errorMsg.set_msgid(chat::INVALID_MSG);
         errorMsg.set_time(time.microSecondsSinceEpoch());
@@ -452,8 +427,8 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
     int groupid = groupChatMsg.groupid();
     string serializedMsg = groupChatMsg.SerializeAsString();
 
-    // 先在本地查找在线用户并直接转发
     vector<int> useridVec = _groupModel.queryGroupUsers(fromid, groupid);
+    vector<int> nonLocalUsers;
     
     {
         lock_guard<mutex> lock(_connMutex);
@@ -462,48 +437,35 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
             auto it = _userConnMap.find(id);
             if (it != _userConnMap.end())
             {
-                // 该用户在本地服务器，直接转发
                 it->second->send(serializedMsg);
+            }
+            else
+            {
+                nonLocalUsers.push_back(id);
             }
         }
     }
 
-    // 通过Kafka广播消息，让所有服务器查询自己的_userConnMap并转发
-    // 由于每个服务器使用不同的groupId，所有服务器都会收到这条消息
+    for (int id : nonLocalUsers)
+    {
+        User user = _userModel.query(id);
+        if (user.getState() != "online")
+        {
+            _offlineMsgModel.insert(id, serializedMsg);
+        }
+    }
+
     if (_kafkaManager) {
         _kafkaManager->sendMessage("group_messages", serializedMsg);
     }
 }
 
-// 从redis消息队列中获取订阅的消息
-void ChatService::handleRedisSubscribeMessage(int userid, string msg)
-{
-    lock_guard<mutex> lock(_connMutex);
-    auto it = _userConnMap.find(userid);
-    if (it != _userConnMap.end())
-    {
-        it->second->send(msg);
-        return;
-    }
-
-    // 存储该用户的离线消息
-    _offlineMsgModel.insert(userid, msg);
-}
-
 // 从Kafka消息队列中获取订阅的消息
+// 用于跨服务器消息传递：当一台服务器收到发给非本地用户的消息时，
+// 通过 Kafka 广播到所有服务器，各服务器在本地 _userConnMap 中查找并转发
 void ChatService::handleKafkaMessage(const string& topic, const string& message) {
-    LOG_INFO << "Received Kafka message on topic: " << topic;
     
-    // 解析基础消息
-    chat::BaseMessage baseMsg;
-    if (!baseMsg.ParseFromString(message)) {
-        LOG_ERROR << "Failed to parse Kafka protobuf message";
-        return;
-    }
-    
-    // 根据主题类型处理不同的消息
     if (topic == "group_messages") {
-        // 群组消息 - 需要解析群ID并转发给所有群成员
         chat::GroupChatMessage groupMsg;
         if (!groupMsg.ParseFromString(message)) {
             LOG_ERROR << "Failed to parse group message from Kafka";
@@ -511,28 +473,28 @@ void ChatService::handleKafkaMessage(const string& topic, const string& message)
         }
         
         int groupid = groupMsg.groupid();
-        vector<int> useridVec = _groupModel.queryGroupUsers(baseMsg.fromid(), groupid);
+        int fromid = groupMsg.base().fromid();
+        vector<int> useridVec = _groupModel.queryGroupUsers(fromid, groupid);
         
         lock_guard<mutex> lock(_connMutex);
         for (int id : useridVec) {
             auto it = _userConnMap.find(id);
             if (it != _userConnMap.end()) {
                 it->second->send(message);
-            } else {
-                _offlineMsgModel.insert(id, message);
             }
         }
     } else {
-        // 用户消息 - 直接转发给目标用户
+        chat::BaseMessage baseMsg;
+        if (!baseMsg.ParseFromString(message)) {
+            LOG_ERROR << "Failed to parse Kafka protobuf message";
+            return;
+        }
+        
         int targetUserId = baseMsg.toid();
         lock_guard<mutex> lock(_connMutex);
         auto it = _userConnMap.find(targetUserId);
         if (it != _userConnMap.end()) {
-            // 用户在线，直接转发消息
             it->second->send(message);
-        } else {
-            // 用户不在线，存储离线消息
-            _offlineMsgModel.insert(targetUserId, message);
         }
     }
 }
