@@ -138,6 +138,108 @@ docker-compose up -d
 
 客户端连接 Nginx 负载均衡入口：`<服务器IP>:7000`
 
+### Docker Compose 环境变量
+
+服务端通过环境变量配置连接地址（均有合理默认值）：
+
+| 变量 | Docker 默认值 | 说明 |
+|------|--------------|------|
+| `SERVER_PORT` | (由 docker-compose 设置) | 服务器监听端口 |
+| `MYSQL_HOST` | `mysql-master` | MySQL 主库地址 |
+| `MYSQL_USER` | `chatuser` | MySQL 用户名 |
+| `MYSQL_PASSWORD` | `chatpass123` | MySQL 密码 |
+| `MYSQL_DATABASE` | `chat` | 数据库名 |
+| `MYSQL_SLAVES` | `mysql-slave1:3306,mysql-slave2:3306` | 从库地址 |
+| `KAFKA_HOST` | `kafka` | Kafka broker 地址 |
+| `REDIS_SENTINEL1/2/3` | `redis-sentinel1:26379` 等 | Sentinel 节点 |
+
+## 启动方法
+
+### 方式一：Docker Compose 一键部署（推荐）
+
+```bash
+git clone https://github.com/haojiubudaqiu/chatserver.git && cd chatserver
+
+# 启动全部 15 个容器（MySQL/Redis/Kafka/Sentinel/Nginx/3×ChatServer）
+docker-compose up -d
+
+# 等待服务就绪（约 30 秒）
+sleep 30
+
+# 编译客户端
+cd build && cmake .. && make
+
+# 连接 Nginx 负载均衡入口
+./bin/ChatClient <服务器IP> 7000
+```
+
+### 方式二：Docker 运行依赖 + 本地编译服务端
+
+```bash
+# 1. 仅启动依赖服务
+docker-compose up -d mysql-master mysql-slave1 mysql-slave2 redis zookeeper kafka
+
+# 2. 编译
+cd build && cmake .. && make
+
+# 3. 配置环境变量连接 Docker 服务
+
+export MYSQL_HOST=127.0.0.1  MYSQL_PASSWORD='Sf523416&111'
+export MYSQL_SLAVES=127.0.0.1:3307,127.0.0.1:3308
+export KAFKA_HOST=127.0.0.1  SERVER_PORT=6000
+
+# 4. 启动服务端
+./bin/ChatServer 0.0.0.0 6000
+
+# 5. 启动客户端
+./bin/ChatClient 127.0.0.1 6000
+```
+
+### 方式三：纯手动
+
+```bash
+# 自行安装 MySQL 5.7+ / Redis 5.0+ / Kafka 2.0+
+mysql -u root -p < docker/mysql/init.sql
+
+cd build && cmake .. && make
+./bin/ChatServer 127.0.0.1 6000
+./bin/ChatClient 127.0.0.1 6000
+```
+
+### 客户端交互示例
+
+```
+>> register          # 注册
+name: alice
+password: 123
+id: 1
+
+>> login             # 登录
+id: 1
+password: 123
+login success
+
+>> addfriend         # 加好友
+friendid: 2
+
+>> chat              # 私聊
+toid: 2
+message: hello!
+
+>> creategroup       # 建群
+groupname: hello
+groupdesc: test group
+
+>> joingroup         # 加群
+groupid: 1
+
+>> groupchat         # 群聊
+groupid: 1
+message: hi all!
+
+>> quit              # 退出
+```
+
 ## 核心模块说明
 
 ### 缓存层 (Redis)
