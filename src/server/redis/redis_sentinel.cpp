@@ -18,11 +18,16 @@ RedisSentinel::RedisSentinel(const std::vector<std::string>& sentinelAddrs,
 
 RedisSentinel::~RedisSentinel() {
     stopListen();
+    {
+        std::lock_guard<std::mutex> lock(masterMutex_);
+        if (masterCtx_) {
+            redisFree(masterCtx_);
+            masterCtx_ = nullptr;
+        }
+    }
     if (sentinelCtx_) {
         redisFree(sentinelCtx_);
-    }
-    if (masterCtx_) {
-        redisFree(masterCtx_);
+        sentinelCtx_ = nullptr;
     }
 }
 
@@ -61,7 +66,10 @@ bool RedisSentinel::connect() {
                     connected_ = true;
                     LOG_INFO << "Connected to sentinel: " << addr;
                     
-                    masterCtx_ = connectTo(currentMasterHost_, currentMasterPort_);
+                    {
+                        std::lock_guard<std::mutex> lock(masterMutex_);
+                        masterCtx_ = connectTo(currentMasterHost_, currentMasterPort_);
+                    }
                     return true;
                 }
             }

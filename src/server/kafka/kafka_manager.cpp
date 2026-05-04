@@ -2,14 +2,12 @@
 #include <muduo/base/Logging.h>
 #include <thread>
 
-// 构造函数体为空，所有初始化工作在成员初始化列表中完成
 KafkaManager::KafkaManager() {}
 
 KafkaManager::~KafkaManager() {
-    // 清理所有生产者和消费者
-    // 使用clear()方法清空映射表，unique_ptr会自动释放管理的对象
-    producers_.clear();// 清空生产者映射表，释放所有KafkaProducer实例
-    consumers_.clear();// 清空消费者映射表，释放所有KafkaConsumer实例
+    std::lock_guard<std::mutex> lock(mutex_);
+    producers_.clear();
+    consumers_.clear();
 }
 
 KafkaManager* KafkaManager::instance() {
@@ -17,54 +15,38 @@ KafkaManager* KafkaManager::instance() {
     return &instance;
 }
 
-// 初始化Kafka管理器
 bool KafkaManager::init(const std::string& brokers, const std::string& groupId) {
-    // 存储Kafka集群地址和消费者组ID
     brokers_ = brokers;
     groupId_ = groupId;
     LOG_INFO << "KafkaManager initialized with brokers: " << brokers << ", groupId: " << groupId;
     return true;
 }
 
-// 获取指定主题的生产者实例
 KafkaProducer* KafkaManager::getProducer(const std::string& topic) {
-    // 检查是否已存在该主题的生产者
-    // 使用find方法在producers_映射表中查找指定主题
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it = producers_.find(topic);
-
-
     if (it != producers_.end()) {
-        // 使用unique_ptr的get()方法获取原始指针
         return it->second.get();
     }
     
-    // 创建新的生产者
-    // 使用make_unique创建KafkaProducer实例，并传入brokers_和topic参数
     std::unique_ptr<KafkaProducer> producer = std::make_unique<KafkaProducer>(brokers_, topic);
-    // 初始化生产者
     if (!producer->init()) {
         LOG_ERROR << "Failed to initialize Kafka producer for topic: " << topic;
         return nullptr;
     }
-    // 保存生产者指针（用于返回）
     KafkaProducer* producerPtr = producer.get();
-    // 将生产者移动到映射表中
-    // 使用std::move将所有权转移给映射表
     producers_[topic] = std::move(producer);
     return producerPtr;
 }
 
-// 获取指定主题的消费者实例
 KafkaConsumer* KafkaManager::getConsumer(const std::string& topic) {
-    // 检查是否已存在该主题的消费者
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it = consumers_.find(topic);
     if (it != consumers_.end()) {
         return it->second.get();
     }
     
-    // 创建新的消费者（使用groupId_实现广播）
     std::unique_ptr<KafkaConsumer> consumer = std::make_unique<KafkaConsumer>(brokers_, topic, groupId_);
-    
     if (!consumer->init()) {
         LOG_ERROR << "Failed to initialize Kafka consumer for topic: " << topic;
         return nullptr;
@@ -75,52 +57,38 @@ KafkaConsumer* KafkaManager::getConsumer(const std::string& topic) {
     return consumerPtr;
 }
 
-// 发送消息到指定主题
 bool KafkaManager::sendMessage(const std::string& topic, const std::string& message) {
-    // 获取指定主题的生产者实例
-    // 如果生产者不存在，会自动创建
     KafkaProducer* producer = getProducer(topic);
     if (producer == nullptr) {
         LOG_ERROR << "Failed to get Kafka producer for topic: " << topic;
         return false;
     }
-    
     return producer->sendMessage(topic, message);
 }
 
-// 设置消息回调函数（用于消费者）
 void KafkaManager::setMessageCallback(std::function<void(const std::string& topic, const std::string& message)> callback) {
-    // 存储回调函数
+    std::lock_guard<std::mutex> lock(mutex_);
     messageCallback_ = callback;
-    
-    // 为所有现有的消费者设置回调函数
-    // 遍历consumers_映射表中的所有键值对
     for (auto& pair : consumers_) {
-        // 为每个消费者设置回调函数
         pair.second->setMessageCallback(callback);
     }
 }
 
-// 初始化并启动消费者线程
 void KafkaManager::initConsumers(const std::vector<std::string>& topics) {
     for (const auto& topic : topics) {
-        // 获取或创建消费者
         KafkaConsumer* consumer = getConsumer(topic);
         if (consumer == nullptr) {
             LOG_ERROR << "Failed to get Kafka consumer for topic: " << topic;
             continue;
         }
         
-        // 设置消息回调
         consumer->setMessageCallback(messageCallback_);
         
-        // 订阅主题
         if (!consumer->subscribe(topic)) {
             LOG_ERROR << "Failed to subscribe to Kafka topic: " << topic;
             continue;
         }
         
-        // 启动消费者线程
         consumerThreads_.emplace_back([consumer]() {
             consumer->startConsume();
         });
@@ -129,15 +97,16 @@ void KafkaManager::initConsumers(const std::vector<std::string>& topics) {
     }
 }
 
-// 停止所有消费者
 void KafkaManager::stopConsumers() {
-    for (auto& consumerPair : consumers_) {
-        if (consumerPair.second) {
-            consumerPair.second->stopConsume();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto& consumerPair : consumers_) {
+            if (consumerPair.second) {
+                consumerPair.second->stopConsume();
+            }
         }
     }
     
-    // 等待所有线程结束
     for (auto& t : consumerThreads_) {
         if (t.joinable()) {
             t.join();

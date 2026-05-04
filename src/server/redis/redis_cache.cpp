@@ -2,6 +2,7 @@
 #include <iostream>
 #include <sstream>
 #include <cstdarg>
+#include <cstdlib>
 #include <muduo/base/Logging.h>
 
 /*
@@ -34,7 +35,8 @@ RedisCache* RedisCache::instance() {
 }
 
 bool RedisCache::connect() {
-    _context = redisConnect("127.0.0.1", 6379);
+    const char* redisHost = getenv("REDIS_HOST") ? getenv("REDIS_HOST") : "127.0.0.1";
+    _context = redisConnect(redisHost, 6379);
     if (nullptr == _context || _context->err) {
         if (_context) {
             LOG_ERROR << "Redis connection error: " << _context->errstr;
@@ -480,12 +482,20 @@ int RedisCache::getOfflineMsgCount(int userId) {
     std::string key = "offline:count:" + std::to_string(userId);
     
     redisReply* reply = (redisReply*)redisCommand(ctx, "GET %s", key.c_str());
-    if (reply == nullptr || reply->type != REDIS_REPLY_STRING) {
-        if (reply) freeReply        return 0;
+    if (reply == nullptr) {
+        return 0;
     }
     
-Object(reply);
-    int count = std::stoi(reply->str);
+    if (reply->type == REDIS_REPLY_NIL) {
+        freeReplyObject(reply);
+        return 0;
+    }
+    
+    int count = 0;
+    if (reply->type == REDIS_REPLY_STRING) {
+        count = std::stoi(reply->str);
+    }
+    
     freeReplyObject(reply);
     return count;
 }
@@ -504,18 +514,6 @@ bool RedisCache::deleteOfflineMsgCount(int userId) {
     std::string key = "offline:count:" + std::to_string(userId);
     
     redisReply* reply = (redisReply*)redisCommand(ctx, "DEL %s", key.c_str());
-    if (reply == nullptr) {
-        LOG_ERROR << "Failed to delete offline message count cache for user id: " << userId;
-        return false;
-    }
-    
-    freeReplyObject(reply);
-    return true;
-}
-    
-    std::string key = "offline:count:" + std::to_string(userId);
-    
-    redisReply* reply = (redisReply*)redisCommand(_context, "DEL %s", key.c_str());
     if (reply == nullptr) {
         LOG_ERROR << "Failed to delete offline message count cache for user id: " << userId;
         return false;

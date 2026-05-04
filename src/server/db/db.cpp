@@ -2,15 +2,32 @@
 #include "connection_pool.h"
 #include "database_router.h"
 #include <muduo/base/Logging.h>
+#include <cstdlib>
 
-
-// 数据库配置信息 - 支持主库+多从库
 static string master_server = "127.0.0.1";
 static int master_port = 3306;
-static string slave_servers = "127.0.0.1:3307,127.0.0.1:3308"; // 多个从库用逗号分隔
+static string slave_servers = "127.0.0.1:3307,127.0.0.1:3308";
 static string user = "root";
 static string password = "123456";
 static string dbname = "chat";
+
+static void loadEnvConfig() {
+    static bool loaded = false;
+    if (loaded) return;
+    loaded = true;
+    const char* env = getenv("MYSQL_HOST");
+    if (env) master_server = env;
+    env = getenv("MYSQL_MASTER_PORT");
+    if (env) master_port = atoi(env);
+    env = getenv("MYSQL_SLAVES");
+    if (env) slave_servers = env;
+    env = getenv("MYSQL_USER");
+    if (env) user = env;
+    env = getenv("MYSQL_PASSWORD");
+    if (env) password = env;
+    env = getenv("MYSQL_DATABASE");
+    if (env) dbname = env;
+}
 
 // 连接池标志
 bool MySQL::useConnectionPool = false;
@@ -29,9 +46,15 @@ void setDBConfig(const string& master, int masterPort,
 }
 
 // 获取主库配置
-string getMasterServer() { return master_server; }
+string getMasterServer() { 
+    const char* env = getenv("MYSQL_HOST");
+    return env ? env : master_server;
+}
 int getMasterPort() { return master_port; }
-string getSlaveServers() { return slave_servers; }
+string getSlaveServers() { 
+    const char* env = getenv("MYSQL_SLAVES");
+    return env ? env : slave_servers;
+}
 
 // 初始化数据库连接
 MySQL::MySQL(DBRole role)
@@ -53,37 +76,30 @@ MySQL::~MySQL()
 bool MySQL::initConnectionPool(const std::string& server, const std::string& user,
                               const std::string& password, const std::string& dbname,
                               int port, int maxSize) {
+    loadEnvConfig();
     useConnectionPool = true;
     
-    // 更新全局配置
     master_server = server;
     master_port = port;
     ::user = user;
     ::password = password;
     ::dbname = dbname;
     
-    // 初始化主库连接池
     ConnectionPool::instance()->initMaster(server, user, password, dbname, port, maxSize);
     
-    // 解析从库配置并初始化从库连接池
+    string slaveStr = getSlaveServers();
     vector<string> slaveAddrs;
     size_t pos = 0;
-    string servers = slave_servers;
     string delimiter = ",";
-    while ((pos = servers.find(delimiter)) != string::npos) {
-        string slave = servers.substr(0, pos);
-        if (!slave.empty()) {
-            slaveAddrs.push_back(slave);
-        }
-        servers.erase(0, pos + delimiter.length());
+    while ((pos = slaveStr.find(delimiter)) != string::npos) {
+        string sl = slaveStr.substr(0, pos);
+        if (!sl.empty()) slaveAddrs.push_back(sl);
+        slaveStr.erase(0, pos + delimiter.length());
     }
-    if (!servers.empty()) {
-        slaveAddrs.push_back(servers);
-    }
+    if (!slaveStr.empty()) slaveAddrs.push_back(slaveStr);
     
-    // 如果配置了从库，初始化从库连接池
     if (!slaveAddrs.empty()) {
-        ConnectionPool::instance()->initSlaves(slaveAddrs, user, password, dbname, 3306, maxSize * 2);
+        ConnectionPool::instance()->initSlaves(slaveAddrs, ::user, ::password, ::dbname, port, maxSize * 2);
     }
     
     LOG_INFO << "Connection pool initialized: master=" << server << ":" << port 
@@ -155,7 +171,7 @@ bool MySQL::connect()
     {
         // 设置连接字符集为 gbk，以确保正确处理中文。
         // 这是一个非常重要的步骤，否则会出现乱码。
-        mysql_query(_conn, "set names gbk");
+        mysql_query(_conn, "set names gbk");","mysql_query(_conn, "set names utf8mb4");
 
         // 保存服务器信息，供连接池归还定位使用
         _server = server_addr;
@@ -188,7 +204,7 @@ bool MySQL::connect(const std::string& server, const std::string& user,
                                   password.c_str(), dbname.c_str(), port, nullptr, 0);
     if (p != nullptr)
     {
-        mysql_query(_conn, "set names gbk");
+        mysql_query(_conn, "set names gbk");","mysql_query(_conn, "set names utf8mb4");
         _server = server;
         _port = port;
         LOG_INFO << "connect mysql success! Role: " << (_role == MASTER ? "MASTER" : "SLAVE") 

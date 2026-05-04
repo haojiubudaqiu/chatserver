@@ -1,21 +1,23 @@
 #include "offlinemessagemodel.hpp"
 #include "database_router.h"
+#include <cstring>
 
-// 存储用户的离线消息
 void OfflineMsgModel::insert(int userid, string msg)
 {
-    char sql[1024] = {0};
-    sprintf(sql, "insert into offlinemessage values(%d, '%s')", userid, msg.c_str());
-
-    // 离线消息需要持久化到主库，确保不丢失
     auto conn = DatabaseRouter::instance()->routeUpdate();
-    if (conn) {
-        conn->update(sql);
-        DatabaseRouter::instance()->returnConnection(conn);
-    }
+    if (!conn || !conn->getConnection()) return;
+
+    MYSQL* mysql = conn->getConnection();
+    std::string escaped(msg.length() * 2 + 1, '\0');
+    mysql_real_escape_string(mysql, &escaped[0], msg.c_str(), msg.length());
+    
+    std::string sql = "insert into offlinemessage values(" 
+                    + std::to_string(userid) + ", '" + escaped.c_str() + "')";
+    
+    conn->update(sql);
+    DatabaseRouter::instance()->returnConnection(conn);
 }
 
-// 删除用户的离线消息
 void OfflineMsgModel::remove(int userid)
 {
     char sql[1024] = {0};
@@ -28,7 +30,6 @@ void OfflineMsgModel::remove(int userid)
     }
 }
 
-// 查询用户的离线消息
 vector<string> OfflineMsgModel::query(int userid)
 {
     char sql[1024] = {0};
@@ -36,9 +37,7 @@ vector<string> OfflineMsgModel::query(int userid)
 
     vector<string> vec;
     
-    // 离线消息读取使用主库，确保读取最新数据
-    // 也可以使用从库+forceMaster，但主库更安全
-    auto conn = DatabaseRouter::instance()->routeUpdate();
+    auto conn = DatabaseRouter::instance()->routeQuery();
     if (!conn) {
         return vec;
     }
@@ -49,7 +48,9 @@ vector<string> OfflineMsgModel::query(int userid)
         MYSQL_ROW row;
         while((row = mysql_fetch_row(res)) != nullptr)
         {
-            vec.push_back(row[0]);
+            if (row[0] != nullptr) {
+                vec.push_back(row[0]);
+            }
         }
         mysql_free_result(res);
     }

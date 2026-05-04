@@ -178,13 +178,23 @@ services:
     container_name: chat_server_1
     depends_on:
       - mysql-master
+      - mysql-slave1
+      - mysql-slave2
       - redis
+      - kafka
     ports:
       - "6000:6000"
     environment:
       - SERVER_PORT=6000
       - MYSQL_HOST=mysql-master
+      - MYSQL_USER=chatuser
+      - MYSQL_PASSWORD=chatpass123
+      - MYSQL_DATABASE=chat
+      - MYSQL_SLAVES=mysql-slave1:3306,mysql-slave2:3306
       - REDIS_HOST=redis
+      - REDIS_SENTINEL1=redis-sentinel1:26379
+      - REDIS_SENTINEL2=redis-sentinel2:26379
+      - REDIS_SENTINEL3=redis-sentinel3:26379
       - KAFKA_HOST=kafka
     networks:
       - chat_network
@@ -198,13 +208,23 @@ services:
     container_name: chat_server_2
     depends_on:
       - mysql-master
+      - mysql-slave1
+      - mysql-slave2
       - redis
+      - kafka
     ports:
       - "6001:6001"
     environment:
       - SERVER_PORT=6001
       - MYSQL_HOST=mysql-master
+      - MYSQL_USER=chatuser
+      - MYSQL_PASSWORD=chatpass123
+      - MYSQL_DATABASE=chat
+      - MYSQL_SLAVES=mysql-slave1:3306,mysql-slave2:3306
       - REDIS_HOST=redis
+      - REDIS_SENTINEL1=redis-sentinel1:26379
+      - REDIS_SENTINEL2=redis-sentinel2:26379
+      - REDIS_SENTINEL3=redis-sentinel3:26379
       - KAFKA_HOST=kafka
     networks:
       - chat_network
@@ -218,13 +238,23 @@ services:
     container_name: chat_server_3
     depends_on:
       - mysql-master
+      - mysql-slave1
+      - mysql-slave2
       - redis
+      - kafka
     ports:
       - "6002:6002"
     environment:
       - SERVER_PORT=6002
       - MYSQL_HOST=mysql-master
+      - MYSQL_USER=chatuser
+      - MYSQL_PASSWORD=chatpass123
+      - MYSQL_DATABASE=chat
+      - MYSQL_SLAVES=mysql-slave1:3306,mysql-slave2:3306
       - REDIS_HOST=redis
+      - REDIS_SENTINEL1=redis-sentinel1:26379
+      - REDIS_SENTINEL2=redis-sentinel2:26379
+      - REDIS_SENTINEL3=redis-sentinel3:26379
       - KAFKA_HOST=kafka
     networks:
       - chat_network

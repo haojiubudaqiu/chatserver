@@ -17,20 +17,22 @@ ChatService *ChatService::instance()
 
 ChatService::ChatService()
 {   
-    std::vector<std::string> sentinelAddrs = {
-        "127.0.0.1:26379",
-        "127.0.0.1:26380",
-        "127.0.0.1:26381"
-    };
+    const char* redisSentinel1 = getenv("REDIS_SENTINEL1") ? getenv("REDIS_SENTINEL1") : "127.0.0.1:26379";
+    const char* redisSentinel2 = getenv("REDIS_SENTINEL2") ? getenv("REDIS_SENTINEL2") : "127.0.0.1:26380";
+    const char* redisSentinel3 = getenv("REDIS_SENTINEL3") ? getenv("REDIS_SENTINEL3") : "127.0.0.1:26381";
+    std::vector<std::string> sentinelAddrs = {redisSentinel1, redisSentinel2, redisSentinel3};
     CacheManager::instance()->initWithSentinel(sentinelAddrs, "mymaster");
     
     _kafkaManager = KafkaManager::instance();
+    
+    const char* kafkaHost = getenv("KAFKA_HOST") ? getenv("KAFKA_HOST") : "localhost";
+    std::string kafkaBroker = std::string(kafkaHost) + ":9092";
     
     char* serverPort = getenv("SERVER_PORT");
     std::string groupId = serverPort ? 
         std::string("chat_server_group_") + serverPort : 
         std::string("chat_server_group_default");
-    _kafkaManager->init("localhost:9092", groupId);
+    _kafkaManager->init(kafkaBroker, groupId);
     
     _kafkaManager->setMessageCallback(std::bind(&ChatService::handleKafkaMessage, this, _1, _2));
     

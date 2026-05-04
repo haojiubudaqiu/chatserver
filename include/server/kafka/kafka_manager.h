@@ -5,6 +5,7 @@
 #include "kafka_consumer.h"
 #include <string>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 // Kafka管理器类
@@ -51,8 +52,8 @@ private:
     std::unordered_map<std::string, std::unique_ptr<KafkaConsumer>> consumers_;
     // 消息回调函数对象，当消费者收到消息时调用
     std::function<void(const std::string& topic, const std::string& message)> messageCallback_;
-    // 消费者线程列表
     std::vector<std::thread> consumerThreads_;
+    std::mutex mutex_;
 };
 
 #endif

@@ -3,6 +3,8 @@ CREATE DATABASE IF NOT EXISTS chat CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode
 
 USE chat;
 
+-- 创建索引优化查询性能
+
 -- 用户表
 CREATE TABLE IF NOT EXISTS user (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -44,8 +46,9 @@ CREATE TABLE IF NOT EXISTS groupuser (
 
 -- 离线消息表
 CREATE TABLE IF NOT EXISTS offlinemessage (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
     userid INT NOT NULL,
-    message VARCHAR(500) NOT NULL,
+    message TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (userid) REFERENCES user(id) ON DELETE CASCADE
 );

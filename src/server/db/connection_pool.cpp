@@ -70,7 +70,6 @@ bool ConnectionPool::initSlaves(const std::vector<std::string>& servers,
                                 const std::string& user, const std::string& password,
                                 const std::string& dbname, int port, int maxSize) {
 
-    // 保存从库配置
     slaveServers_ = servers;
     user_ = user;
     password_ = password;
@@ -78,15 +77,17 @@ bool ConnectionPool::initSlaves(const std::vector<std::string>& servers,
     port_ = port;
     slaveMaxSize_ = maxSize;
     
-    // 初始化从库连接队列 大小为从库服务器的数量
     slaveConnections_.resize(slaveServers_.size());
+    slaveAvailable_.resize(slaveServers_.size());
+    for (size_t i = 0; i < slaveAvailable_.size(); ++i) {
+        slaveAvailable_[i].store(true);
+    }
     
-    // 为每个从库预先创建一些连接
     for (size_t i = 0; i < slaveServers_.size(); ++i) {
         for (int j = 0; j < slaveMaxSize_ / 2; ++j) {
             auto conn = createConnection(MySQL::SLAVE, slaveServers_[i]);
             if (conn) {
-                slaveConnections_[i].push(conn);  // 将连接放入对应从库的队列
+                slaveConnections_[i].push(conn);
             }
         }
         LOG_INFO << "Slave " << i << " connection pool initialized with " 
@@ -106,7 +107,16 @@ std::shared_ptr<MySQL> ConnectionPool::createConnection() {
 // 连接工厂方法 
 std::shared_ptr<MySQL> ConnectionPool::createConnection(MySQL::DBRole role, const std::string& server) {
     std::shared_ptr<MySQL> conn(new MySQL(role));
-    if (conn->connect(server, user_, password_, dbname_, port_)) {
+
+    std::string host = server;
+    int port = port_;
+    auto colonPos = server.find(':');
+    if (colonPos != std::string::npos) {
+        host = server.substr(0, colonPos);
+        port = std::stoi(server.substr(colonPos + 1));
+    }
+    
+    if (conn->connect(host, user_, password_, dbname_, port)) {
         return conn;
     }
     return nullptr;

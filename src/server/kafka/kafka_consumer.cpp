@@ -53,18 +53,17 @@ bool KafkaConsumer::init() {
         return false;
     }
     
+    if (rd_kafka_conf_set(conf, "auto.offset.reset", "earliest", errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK) {
+        LOG_ERROR << "Failed to set auto offset reset: " << errstr;
+        rd_kafka_conf_destroy(conf);
+        return false;
+    }
+    
     // 创建consumer实例
     consumer_ = rd_kafka_new(RD_KAFKA_CONSUMER, conf, errstr, sizeof(errstr));
     if (consumer_ == nullptr) {
         LOG_ERROR << "Failed to create Kafka consumer: " << errstr;
         rd_kafka_conf_destroy(conf);
-        return false;
-    }
-    
-    // 初始化Kafka consumer轮询机制
-    rd_kafka_resp_err_t err = rd_kafka_poll_set_consumer(static_cast<rd_kafka_t*>(consumer_));
-    if (err) {
-        LOG_ERROR << "Failed to set consumer: " << rd_kafka_err2str(err);
         return false;
     }
     
@@ -80,24 +79,25 @@ bool KafkaConsumer::subscribe(const std::string& topic) {
     LOG_WARN << "librdkafka not available, cannot subscribe to Kafka topic";
     return false;
 #else
-    // 检查消费者是否已初始化
     if (consumer_ == nullptr) {
         LOG_ERROR << "Kafka consumer not initialized";
         return false;
     }
     
-    // 创建主题分区列表（容量为1）
     rd_kafka_topic_partition_list_t *topics = rd_kafka_topic_partition_list_new(1);
-    // 添加主题到列表（使用自动分区分配）
     rd_kafka_topic_partition_list_add(topics, topic.c_str(), RD_KAFKA_PARTITION_UA);
-    // 订阅主题
     rd_kafka_resp_err_t err = rd_kafka_subscribe(static_cast<rd_kafka_t*>(consumer_), topics);
-    // 释放主题分区列表
     rd_kafka_topic_partition_list_destroy(topics);
     
     if (err) {
-        // 记录订阅失败错误日志
         LOG_ERROR << "Failed to subscribe to topic " << topic << ": " << rd_kafka_err2str(err);
+        return false;
+    }
+    
+    // poll_set_consumer must be called AFTER subscribe
+    err = rd_kafka_poll_set_consumer(static_cast<rd_kafka_t*>(consumer_));
+    if (err) {
+        LOG_ERROR << "Failed to set consumer: " << rd_kafka_err2str(err);
         return false;
     }
     
@@ -161,8 +161,7 @@ void KafkaConsumer::startConsume() {
                     // Reached end of partition
                     LOG_INFO << "Reached end of partition";
                 } else if (rkmessage->err == RD_KAFKA_RESP_ERR__TIMED_OUT) {
-                    // Poll timeout
-                    LOG_INFO << "Poll timeout";
+                    // Poll timeout - normal, no messages
                 } else {
                     LOG_ERROR << "Kafka consumer error: " << rd_kafka_message_errstr(rkmessage);
                 }
