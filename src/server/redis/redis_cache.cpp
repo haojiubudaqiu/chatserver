@@ -67,7 +67,7 @@ bool RedisCache::connectWithSentinel(const std::vector<std::string>& sentinelAdd
         return false;
     }
     
-    _context = ctx.get();
+    _context = nullptr;
     
     sentinel_->setFailoverHandler([this](const std::string& newHost, int newPort) {
         LOG_WARN << "Redis failover detected! New master: " << newHost << ":" << newPort;
@@ -96,7 +96,7 @@ redisReply* RedisCache::executeCommand(const char* format, ...) {
     
     va_list args;
     va_start(args, format);
-    redisReply* reply = (redisReply*)redisCommand(ctx, format, args);
+    redisReply* reply = (redisReply*)redisvCommand(ctx, format, args);
     va_end(args);
     
     return reply;

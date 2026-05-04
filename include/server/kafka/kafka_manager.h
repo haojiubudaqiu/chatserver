@@ -6,7 +6,9 @@
 #include <string>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
+#include <vector>
 
 // Kafka管理器类
 // 这是一个Kafka客户端的管理类，采用单例模式，集中管理生产者和消费者实例

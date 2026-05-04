@@ -36,9 +36,8 @@ include_directories(
 
 # 添加库搜索路径
 link_directories(
-    /usr/local/lib  # muduo
-    /usr/lib64/mysql # MySQL
-    /usr/lib64 # 系统库路径，包含hiredis
+    /usr/local/lib
+    /usr/lib/x86_64-linux-gnu
 )
 
 # 加载子目录

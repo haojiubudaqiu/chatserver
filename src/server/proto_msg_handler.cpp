@@ -17,8 +17,7 @@ ProtoMsgHandler ProtoMsgHandlerMap::getHandler(chat::MsgType msgType) {
             if (conn && conn->connected()) {
                 chat::BaseMessage response;
                 response.set_msgid(chat::INVALID_MSG);
-                // 发送错误响应
-                // conn->send(response.SerializeAsString());
+                conn->send(response.SerializeAsString());
             }
         };
     }

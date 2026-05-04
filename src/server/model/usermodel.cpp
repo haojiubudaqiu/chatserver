@@ -68,12 +68,12 @@ User UserModel::query(int id, bool forceMaster)
             user.setState(row[3]);
             mysql_free_result(res);
             
-            // 将查询结果缓存到Redis
             _cacheManager->cacheUser(user);
             
             DatabaseRouter::instance()->returnConnection(conn);
             return user;
         }
+        mysql_free_result(res);
     }
     
     if (conn) DatabaseRouter::instance()->returnConnection(conn);

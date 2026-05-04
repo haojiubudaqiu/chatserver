@@ -46,12 +46,9 @@ RUN cd /tmp && \
 
 WORKDIR /build
 
-# 先删除旧的pb.h文件，然后重新生成
-COPY src/server/proto/message.proto ./src/server/proto/
-RUN rm -f ./src/server/proto/message.pb.h ./src/server/proto/message.pb.cc
-RUN protoc --cpp_out=./src/server/proto ./src/server/proto/message.proto
-
 COPY . .
+
+RUN protoc --cpp_out=./src/server/proto ./src/server/proto/message.proto
 
 RUN mkdir -p build && cd build && \
     cmake .. \

@@ -169,7 +169,6 @@ Group GroupModel::queryGroup(int groupid)
             group.setDesc(row[2]);
             mysql_free_result(res);
             
-            // 查询群组成员信息
             sprintf(sql, "select a.id,a.name,a.state,b.grouprole from user a \
                 inner join groupuser b on b.userid = a.id where b.groupid=%d",
                     group.getId());
@@ -190,8 +189,11 @@ Group GroupModel::queryGroup(int groupid)
                 mysql_free_result(res2);
             }
             
-            // 缓存到Redis
             _cacheManager->cacheGroup(group);
+        }
+        else
+        {
+            mysql_free_result(res);
         }
     }
     DatabaseRouter::instance()->returnConnection(conn);

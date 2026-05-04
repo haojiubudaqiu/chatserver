@@ -89,9 +89,12 @@ void KafkaManager::initConsumers(const std::vector<std::string>& topics) {
             continue;
         }
         
-        consumerThreads_.emplace_back([consumer]() {
-            consumer->startConsume();
-        });
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            consumerThreads_.emplace_back([consumer]() {
+                consumer->startConsume();
+            });
+        }
         
         LOG_INFO << "Started Kafka consumer for topic: " << topic;
     }

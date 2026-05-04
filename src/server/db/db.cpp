@@ -124,9 +124,8 @@ bool MySQL::connect()
 {
     // 默认连接主库
     string server_addr = master_server;
-    int port = 3306;
+    int port = master_port;
     
-    // 根据角色选择服务器
     if (_role == SLAVE) {
         // 实现一个简单的轮询 (round-robin) 算法来选择从库，以实现负载均衡。
         static int slave_index = 0; // 静态变量，记录上次选择的从库索引
@@ -171,7 +170,7 @@ bool MySQL::connect()
     {
         // 设置连接字符集为 gbk，以确保正确处理中文。
         // 这是一个非常重要的步骤，否则会出现乱码。
-        mysql_query(_conn, "set names gbk");","mysql_query(_conn, "set names utf8mb4");
+        mysql_query(_conn, "set names utf8mb4");
 
         // 保存服务器信息，供连接池归还定位使用
         _server = server_addr;
@@ -204,7 +203,7 @@ bool MySQL::connect(const std::string& server, const std::string& user,
                                   password.c_str(), dbname.c_str(), port, nullptr, 0);
     if (p != nullptr)
     {
-        mysql_query(_conn, "set names gbk");","mysql_query(_conn, "set names utf8mb4");
+        mysql_query(_conn, "set names utf8mb4");
         _server = server;
         _port = port;
         LOG_INFO << "connect mysql success! Role: " << (_role == MASTER ? "MASTER" : "SLAVE") 

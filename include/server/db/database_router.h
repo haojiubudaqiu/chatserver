@@ -4,6 +4,7 @@
 #include "db.h"
 #include "connection_pool.h"
 #include <memory>
+#include <mutex>
 
 /**
  * 这个 DatabaseRouter 类是一个更高层次的抽象，

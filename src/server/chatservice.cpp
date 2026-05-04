@@ -361,8 +361,12 @@ void ChatService::addFriend(const TcpConnectionPtr &conn, const string &data, Ti
     int userid = addFriendReq.base().fromid();
     int friendid = addFriendReq.friendid();
 
-    // 存储好友信息
     _friendModel.insert(userid, friendid);
+    
+    chat::BaseMessage response;
+    response.set_msgid(chat::ADD_FRIEND_MSG);
+    response.set_time(time.microSecondsSinceEpoch());
+    conn->send(response.SerializeAsString());
 }
 
 // 创建群组业务
@@ -388,9 +392,13 @@ void ChatService::createGroup(const TcpConnectionPtr &conn, const string &data, 
     Group group(-1, name, desc);
     if (_groupModel.createGroup(group))
     {
-        // 存储群组创建人信息
         _groupModel.addGroup(userid, group.getId(), "creator");
     }
+    
+    chat::BaseMessage response;
+    response.set_msgid(chat::CREATE_GROUP_MSG);
+    response.set_time(time.microSecondsSinceEpoch());
+    conn->send(response.SerializeAsString());
 }
 
 // 加入群组业务
@@ -411,6 +419,11 @@ void ChatService::addGroup(const TcpConnectionPtr &conn, const string &data, Tim
     int userid = addGroupReq.base().fromid();
     int groupid = addGroupReq.groupid();
     _groupModel.addGroup(userid, groupid, "normal");
+    
+    chat::BaseMessage response;
+    response.set_msgid(chat::ADD_GROUP_MSG);
+    response.set_time(time.microSecondsSinceEpoch());
+    conn->send(response.SerializeAsString());
 }
 
 void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Timestamp time)
