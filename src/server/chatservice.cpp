@@ -361,11 +361,13 @@ void ChatService::addFriend(const TcpConnectionPtr &conn, const string &data, Ti
     int userid = addFriendReq.base().fromid();
     int friendid = addFriendReq.friendid();
 
-    _friendModel.insert(userid, friendid);
+    bool success = _friendModel.insert(userid, friendid);
     
-    chat::BaseMessage response;
-    response.set_msgid(chat::ADD_FRIEND_MSG);
-    response.set_time(time.microSecondsSinceEpoch());
+    chat::AddFriendResponse response;
+    response.mutable_base()->set_msgid(chat::ADD_FRIEND_MSG_ACK);
+    response.mutable_base()->set_time(time.microSecondsSinceEpoch());
+    response.set_err_num(success ? 0 : 1);
+    response.set_errmsg(success ? "" : "Failed to add friend");
     conn->send(response.SerializeAsString());
 }
 
@@ -390,14 +392,18 @@ void ChatService::createGroup(const TcpConnectionPtr &conn, const string &data, 
 
     // 存储新创建的群组信息
     Group group(-1, name, desc);
-    if (_groupModel.createGroup(group))
+    bool success = _groupModel.createGroup(group);
+    if (success)
     {
         _groupModel.addGroup(userid, group.getId(), "creator");
     }
     
-    chat::BaseMessage response;
-    response.set_msgid(chat::CREATE_GROUP_MSG);
-    response.set_time(time.microSecondsSinceEpoch());
+    chat::CreateGroupResponse response;
+    response.mutable_base()->set_msgid(chat::CREATE_GROUP_MSG_ACK);
+    response.mutable_base()->set_time(time.microSecondsSinceEpoch());
+    response.set_err_num(success ? 0 : 1);
+    response.set_errmsg(success ? "" : "Failed to create group");
+    if (success) response.set_groupid(group.getId());
     conn->send(response.SerializeAsString());
 }
 
@@ -420,9 +426,11 @@ void ChatService::addGroup(const TcpConnectionPtr &conn, const string &data, Tim
     int groupid = addGroupReq.groupid();
     _groupModel.addGroup(userid, groupid, "normal");
     
-    chat::BaseMessage response;
-    response.set_msgid(chat::ADD_GROUP_MSG);
-    response.set_time(time.microSecondsSinceEpoch());
+    chat::AddGroupResponse response;
+    response.mutable_base()->set_msgid(chat::ADD_GROUP_MSG_ACK);
+    response.mutable_base()->set_time(time.microSecondsSinceEpoch());
+    response.set_err_num(0);
+    response.set_errmsg("");
     conn->send(response.SerializeAsString());
 }
 

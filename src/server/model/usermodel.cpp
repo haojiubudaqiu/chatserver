@@ -11,14 +11,19 @@ UserModel::UserModel() {
 // User表的增加方法
 bool UserModel::insert(User &user)
 {
-    // 1.组装sql语句
+    auto conn = DatabaseRouter::instance()->routeUpdate();
+    if (!conn) return false;
+
+    char name_escaped[256];
+    char pwd_escaped[256];
+    mysql_real_escape_string(conn->getConnection(), name_escaped, user.getName().c_str(), user.getName().length());
+    mysql_real_escape_string(conn->getConnection(), pwd_escaped, user.getPwd().c_str(), user.getPwd().length());
+
     char sql[1024] = {0};
     sprintf(sql, "insert into user(name, password, state) values('%s', '%s', '%s')",
-            user.getName().c_str(), user.getPwd().c_str(), user.getState().c_str());
+            name_escaped, pwd_escaped, user.getState().c_str());
 
-    // 使用DatabaseRouter获取主库连接（写操作）
-    auto conn = DatabaseRouter::instance()->routeUpdate();
-    if (conn && conn->update(sql))
+    if (conn->update(sql))
     {
         // 获取插入成功的用户数据生成的主键id
         user.setId(mysql_insert_id(conn->getConnection()));
@@ -31,7 +36,7 @@ bool UserModel::insert(User &user)
         return true;
     }
     
-    if (conn) DatabaseRouter::instance()->returnConnection(conn);
+    DatabaseRouter::instance()->returnConnection(conn);
     return false;
 }
 

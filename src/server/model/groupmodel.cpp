@@ -9,16 +9,20 @@ GroupModel::GroupModel() {
 // 创建群组
 bool GroupModel::createGroup(Group &group)
 {
-    char sql[1024] = {0};
-    sprintf(sql, "insert into allgroup(groupname, groupdesc) values('%s', '%s')",
-            group.getName().c_str(), group.getDesc().c_str());
-
-    // 写操作，使用主库
     auto conn = DatabaseRouter::instance()->routeUpdate();
     if (!conn) {
         return false;
     }
-    
+
+    char name_escaped[256];
+    char desc_escaped[256];
+    mysql_real_escape_string(conn->getConnection(), name_escaped, group.getName().c_str(), group.getName().length());
+    mysql_real_escape_string(conn->getConnection(), desc_escaped, group.getDesc().c_str(), group.getDesc().length());
+
+    char sql[1024] = {0};
+    sprintf(sql, "insert into allgroup(groupname, groupdesc) values('%s', '%s')",
+            name_escaped, desc_escaped);
+
     if (conn->update(sql))
     {
         group.setId(mysql_insert_id(conn->getConnection()));
@@ -37,16 +41,20 @@ bool GroupModel::createGroup(Group &group)
 // 加入群组
 void GroupModel::addGroup(int userid, int groupid, string role)
 {
+    auto conn = DatabaseRouter::instance()->routeUpdate();
+    if (!conn) {
+        return;
+    }
+
+    char role_escaped[256];
+    mysql_real_escape_string(conn->getConnection(), role_escaped, role.c_str(), role.length());
+
     char sql[1024] = {0};
     sprintf(sql, "insert into groupuser values(%d, %d, '%s')",
-            groupid, userid, role.c_str());
+            groupid, userid, role_escaped);
 
-    // 写操作，使用主库
-    auto conn = DatabaseRouter::instance()->routeUpdate();
-    if (conn) {
-        conn->update(sql);
-        DatabaseRouter::instance()->returnConnection(conn);
-    }
+    conn->update(sql);
+    DatabaseRouter::instance()->returnConnection(conn);
     
     // 清除群组缓存
     _cacheManager->invalidateGroup(groupid);
@@ -189,13 +197,9 @@ Group GroupModel::queryGroup(int groupid)
                 mysql_free_result(res2);
             }
             
-            _cacheManager->cacheGroup(group);
-        }
-        else
-        {
-            mysql_free_result(res);
-        }
+        _cacheManager->cacheGroup(group);
     }
+}
     DatabaseRouter::instance()->returnConnection(conn);
     return group;
 }

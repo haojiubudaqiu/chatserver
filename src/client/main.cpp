@@ -298,6 +298,48 @@ void readTaskHandler(int clientfd)
             sem_post(&rwsem);
             continue;
         }
+
+        if (ADD_FRIEND_MSG_ACK == msgtype)
+        {
+            chat::AddFriendResponse response;
+            if (response.ParseFromString(string(buffer, len)))
+            {
+                if (response.err_num() == 0)
+                    cout << "Friend added successfully!" << endl;
+                else
+                    cerr << "Add friend failed: " << response.errmsg() << endl;
+            }
+            sem_post(&rwsem);
+            continue;
+        }
+
+        if (CREATE_GROUP_MSG_ACK == msgtype)
+        {
+            chat::CreateGroupResponse response;
+            if (response.ParseFromString(string(buffer, len)))
+            {
+                if (response.err_num() == 0)
+                    cout << "Group created successfully, groupid: " << response.groupid() << endl;
+                else
+                    cerr << "Create group failed: " << response.errmsg() << endl;
+            }
+            sem_post(&rwsem);
+            continue;
+        }
+
+        if (ADD_GROUP_MSG_ACK == msgtype)
+        {
+            chat::AddGroupResponse response;
+            if (response.ParseFromString(string(buffer, len)))
+            {
+                if (response.err_num() == 0)
+                    cout << "Joined group successfully!" << endl;
+                else
+                    cerr << "Join group failed: " << response.errmsg() << endl;
+            }
+            sem_post(&rwsem);
+            continue;
+        }
     }
 }
 
@@ -405,6 +447,10 @@ void addfriend(int clientfd, string str)
     {
         cerr << "send addfriend msg error -> " << buffer << endl;
     }
+    else
+    {
+        sem_wait(&rwsem);
+    }
 }
 
 void chat(int clientfd, string str)
@@ -448,6 +494,10 @@ void creategroup(int clientfd, string str)
     {
         cerr << "send creategroup msg error -> " << buffer << endl;
     }
+    else
+    {
+        sem_wait(&rwsem);
+    }
 }
 
 void addgroup(int clientfd, string str)
@@ -459,6 +509,10 @@ void addgroup(int clientfd, string str)
     if (len == -1)
     {
         cerr << "send addgroup msg error -> " << buffer << endl;
+    }
+    else
+    {
+        sem_wait(&rwsem);
     }
 }
 

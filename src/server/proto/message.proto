@@ -8,17 +8,20 @@ package chat;
 
 // 消息类型枚举，定义所有消息的“类型编号”，用于消息分发和区分协议种类。方便识别和路由
 enum MsgType {
-    INVALID_MSG = 0;
-    LOGIN_MSG = 1;
-    LOGIN_MSG_ACK = 2;
-    REG_MSG = 3;
-    REG_MSG_ACK = 4;
-    ONE_CHAT_MSG = 5;
-    ADD_FRIEND_MSG = 6;
-    CREATE_GROUP_MSG = 7;
-    ADD_GROUP_MSG = 8;
-    GROUP_CHAT_MSG = 9;
-    LOGINOUT_MSG = 10;
+  INVALID_MSG = 0;
+  LOGIN_MSG = 1;
+  LOGIN_MSG_ACK = 2;
+  REG_MSG = 3;
+  REG_MSG_ACK = 4;
+  ONE_CHAT_MSG = 5;
+  ADD_FRIEND_MSG = 6;
+  ADD_FRIEND_MSG_ACK = 11;
+  CREATE_GROUP_MSG = 7;
+  CREATE_GROUP_MSG_ACK = 12;
+  ADD_GROUP_MSG = 8;
+  ADD_GROUP_MSG_ACK = 13;
+  GROUP_CHAT_MSG = 9;
+  LOGINOUT_MSG = 10;
 }
 
 // 用户信息
@@ -114,8 +117,30 @@ message GroupChatMessage {
 
 // 添加好友消息
 message AddFriendRequest {
-    BaseMessage base = 1;
-    int32 friendid = 2;
+  BaseMessage base = 1;
+  int32 friendid = 2;
+}
+
+// 添加好友响应
+message AddFriendResponse {
+  BaseMessage base = 1;
+  int32 err_num = 2;
+  string errmsg = 3;
+}
+
+// 创建群组响应
+message CreateGroupResponse {
+  BaseMessage base = 1;
+  int32 err_num = 2;
+  string errmsg = 3;
+  int32 groupid = 4;
+}
+
+// 加入群组响应
+message AddGroupResponse {
+  BaseMessage base = 1;
+  int32 err_num = 2;
+  string errmsg = 3;
 }
 
 // 登出消息

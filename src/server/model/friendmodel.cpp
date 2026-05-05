@@ -6,14 +6,14 @@ FriendModel::FriendModel() {
     _cacheManager = CacheManager::instance();
 }
 
-void FriendModel::insert(int userid, int friendid)
+bool FriendModel::insert(int userid, int friendid)
 {
     char sql[1024] = {0};
     sprintf(sql, "insert ignore into friend values(%d, %d)", userid, friendid);
 
     auto conn = DatabaseRouter::instance()->routeUpdate();
     if (!conn) {
-        return;
+        return false;
     }
     
     bool ok = conn->update(sql);
@@ -23,6 +23,7 @@ void FriendModel::insert(int userid, int friendid)
         _cacheManager->invalidateFriends(userid);
         _cacheManager->invalidateFriends(friendid);
     }
+    return ok;
 }
 
 vector<User> FriendModel::query(int userid)
