@@ -13,6 +13,14 @@ file(GLOB MODEL_FILES "model/*.cpp")
 file(GLOB REDIS_FILES "redis/*.cpp")
 file(GLOB LOG_FILES "log/*.cpp")
 file(GLOB KAFKA_FILES "kafka/*.cpp")
+file(GLOB MCP_CHAT_FILES "mcp/*.cpp")
+
+# MCP库源文件 (只包含服务端需要的)
+set(MCP_LIB_FILES
+    ${PROJECT_SOURCE_DIR}/c++_mcp/src/mcp_server.cpp
+    ${PROJECT_SOURCE_DIR}/c++_mcp/src/mcp_resource.cpp
+    ${PROJECT_SOURCE_DIR}/c++_mcp/src/mcp_tool.cpp
+)
 
 # 指定生成可执行文件
 add_executable(ChatServer 
@@ -22,6 +30,8 @@ add_executable(ChatServer
     ${REDIS_FILES}
     ${LOG_FILES}
     ${KAFKA_FILES}
+    ${MCP_CHAT_FILES}
+    ${MCP_LIB_FILES}
     ${PROTO_SRCS}
     ${PROTO_HDRS}
 )
@@ -65,6 +75,6 @@ endif()
 
 # 可选：设置编译器特性
 set_target_properties(ChatServer PROPERTIES
-    CXX_STANDARD 14
+    CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
 )

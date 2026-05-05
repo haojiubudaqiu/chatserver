@@ -81,7 +81,9 @@ WORKDIR /app
 COPY --from=builder /build/bin ./bin
 
 EXPOSE 6000
+EXPOSE 8888
 
 ENV SERVER_PORT=6000
+ENV MCP_PORT=8888
 
-CMD /bin/sh -c './bin/ChatServer 0.0.0.0 ${SERVER_PORT}'
+CMD /bin/sh -c './bin/ChatServer 0.0.0.0 ${SERVER_PORT} --mcp-port ${MCP_PORT}'

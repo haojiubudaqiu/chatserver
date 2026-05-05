@@ -34,6 +34,14 @@ public:
     void reset();
     void handleKafkaMessage(const string& topic, const string& message);
 
+    UserModel& getUserModel() { return _userModel; }
+    GroupModel& getGroupModel() { return _groupModel; }
+    FriendModel& getFriendModel() { return _friendModel; }
+    OfflineMsgModel& getOfflineMsgModel() { return _offlineMsgModel; }
+    
+    std::vector<int> getOnlineUserIds();
+    size_t getConnectionCount();
+
 private:
     ChatService();
 

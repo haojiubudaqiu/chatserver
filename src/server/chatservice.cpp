@@ -521,3 +521,17 @@ void ChatService::handleKafkaMessage(const string& topic, const string& message)
         }
     }
 }
+
+std::vector<int> ChatService::getOnlineUserIds() {
+    std::vector<int> ids;
+    lock_guard<mutex> lock(_connMutex);
+    for (const auto& pair : _userConnMap) {
+        ids.push_back(pair.first);
+    }
+    return ids;
+}
+
+size_t ChatService::getConnectionCount() {
+    lock_guard<mutex> lock(_connMutex);
+    return _userConnMap.size();
+}

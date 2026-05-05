@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.0)
 project(chat)
 
-# 启用C++14标准以支持std::make_unique
-set(CMAKE_CXX_STANDARD 14)
+# 启用C++17标准以支持MCP库
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -26,6 +26,10 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/include/server/log
     ${PROJECT_SOURCE_DIR}/include/server/kafka
     ${PROJECT_SOURCE_DIR}/thirdparty
+    
+    # MCP库头文件路径
+    ${PROJECT_SOURCE_DIR}/c++_mcp/include
+    ${PROJECT_SOURCE_DIR}/c++_mcp/common
     
     # 添加 MySQL 头文件路径
     /usr/include/mysql

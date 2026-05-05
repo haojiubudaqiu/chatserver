@@ -184,8 +184,10 @@ services:
       - kafka
     ports:
       - "6000:6000"
+      - "8888:8888"
     environment:
       - SERVER_PORT=6000
+      - MCP_PORT=8888
       - MYSQL_HOST=mysql-master
       - MYSQL_USER=chatuser
       - MYSQL_PASSWORD=chatpass123
@@ -214,8 +216,10 @@ services:
       - kafka
     ports:
       - "6001:6001"
+      - "8889:8889"
     environment:
       - SERVER_PORT=6001
+      - MCP_PORT=8889
       - MYSQL_HOST=mysql-master
       - MYSQL_USER=chatuser
       - MYSQL_PASSWORD=chatpass123
@@ -244,8 +248,10 @@ services:
       - kafka
     ports:
       - "6002:6002"
+      - "8890:8890"
     environment:
       - SERVER_PORT=6002
+      - MCP_PORT=8890
       - MYSQL_HOST=mysql-master
       - MYSQL_USER=chatuser
       - MYSQL_PASSWORD=chatpass123
