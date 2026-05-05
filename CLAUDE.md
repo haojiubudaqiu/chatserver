@@ -41,6 +41,7 @@ cd build && cmake .. && make
 6. **Kafka Layer** — `KafkaProducer`, `KafkaConsumer`, `KafkaManager` (cross-server message passing)
 7. **Async Logging** — `AsyncLogging` (muduo-style double-buffered async logger)
 8. **Protobuf** — `message.proto`, `ProtoMsgHandlerMap` (message ID → handler binding)
+9. **MCP Server** — `ChatMcpServer` (HTTP-based MCP server for AI agent integration), embeds `c++_mcp/` library
 
 ### Cross-Server Communication Architecture
 
@@ -77,7 +78,9 @@ chatserver/
 │   ├── redis/              — redis_cache.cpp, cache_manager.cpp, redis_sentinel.cpp
 │   ├── kafka/              — kafka_manager.cpp, kafka_producer.cpp, kafka_consumer.cpp
 │   ├── log/                — async_logging.cpp, log_file.cpp
+│   ├── mcp/                — chat_mcp_server.cpp (MCP tools for AI agents)
 │   └── proto/              — message.proto (protobuf definitions)
+├── c++_mcp/                — MCP C++ library (HTTP+SSE+Stdio transport)
 ├── src/client/             — Client implementation
 ├── include/server/         — Mirror of src/server/ headers
 ├── test/                   — Test code
@@ -102,6 +105,7 @@ chatserver/
 - **MySQL master/slave** — `DatabaseRouter` auto-routes writes to master, reads to slave. `forceMaster=true` available for read-after-write consistency.
 - **Thread safety** — `_userConnMap` protected by `_connMutex` in ChatService.
 - **Offline messages** — Stored in MySQL `offlinemessage` table. Pushed to user on login, then deleted.
+- **MCP Server** — Optional HTTP MCP server (`--mcp-port PORT`). Exposes 6 tools: `chat_server_stats`, `chat_list_online_users`, `chat_get_user_info`, `chat_get_user_friends`, `chat_get_group_info`, `chat_list_user_groups`. Runs in a separate thread via `c++_mcp` library. Supports Streamable HTTP (2025-03-26 spec) on `/mcp` endpoint.
 
 ## Common Development Tasks
 
