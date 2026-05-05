@@ -105,7 +105,7 @@ chatserver/
 - **MySQL master/slave** — `DatabaseRouter` auto-routes writes to master, reads to slave. `forceMaster=true` available for read-after-write consistency.
 - **Thread safety** — `_userConnMap` protected by `_connMutex` in ChatService.
 - **Offline messages** — Stored in MySQL `offlinemessage` table. Pushed to user on login, then deleted.
-- **MCP Server** — Optional HTTP MCP server (`--mcp-port PORT`). Exposes 6 tools: `chat_server_stats`, `chat_list_online_users`, `chat_get_user_info`, `chat_get_user_friends`, `chat_get_group_info`, `chat_list_user_groups`. Runs in a separate thread via `c++_mcp` library. Supports Streamable HTTP (2025-03-26 spec) on `/mcp` endpoint.
+- **MCP Server** — Optional HTTP MCP server (`--mcp-port PORT`). Exposes 8 tools: `chat_user_login`, `chat_send_message`, `chat_server_stats`, `chat_list_online_users`, `chat_get_user_info`, `chat_get_user_friends`, `chat_get_group_info`, `chat_list_user_groups`. Runs in a separate thread via `c++_mcp` library. Supports Streamable HTTP (2025-03-26 spec) on `/mcp` endpoint. `chat_user_login` validates credentials and returns user profile; `chat_send_message` sends private messages using the same delivery pipeline (local TCP → Kafka → offline storage) as the native client.
 
 ## Common Development Tasks
 

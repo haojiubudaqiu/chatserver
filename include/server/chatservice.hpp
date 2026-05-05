@@ -41,6 +41,8 @@ public:
     
     std::vector<int> getOnlineUserIds();
     size_t getConnectionCount();
+    
+    bool sendMessageByMcp(int fromId, int toId, const string& messageContent);
 
 private:
     ChatService();

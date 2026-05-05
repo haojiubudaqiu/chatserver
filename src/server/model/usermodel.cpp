@@ -85,6 +85,45 @@ User UserModel::query(int id, bool forceMaster)
     return User();
 }
 
+// 根据用户名称查询用户信息
+User UserModel::queryByName(const string& name)
+{
+    auto conn = DatabaseRouter::instance()->routeQuery(true);
+    if (!conn) {
+        return User();
+    }
+    
+    char name_escaped[256];
+    mysql_real_escape_string(conn->getConnection(), name_escaped, name.c_str(), name.length());
+    
+    char sql[1024] = {0};
+    sprintf(sql, "select * from user where name = '%s'", name_escaped);
+
+    MYSQL_RES *res = conn->query(sql);
+    if (res != nullptr)
+    {
+        MYSQL_ROW row = mysql_fetch_row(res);
+        if (row != nullptr)
+        {
+            User user;
+            user.setId(atoi(row[0]));
+            user.setName(row[1]);
+            user.setPwd(row[2]);
+            user.setState(row[3]);
+            mysql_free_result(res);
+            
+            _cacheManager->cacheUser(user);
+            
+            DatabaseRouter::instance()->returnConnection(conn);
+            return user;
+        }
+        mysql_free_result(res);
+    }
+    
+    if (conn) DatabaseRouter::instance()->returnConnection(conn);
+    return User();
+}
+
 // 兼容旧接口，默认不强制读主库
 User UserModel::query(int id)
 {

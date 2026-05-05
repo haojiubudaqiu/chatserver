@@ -19,6 +19,9 @@ public:
     User query(int id);
     User query(int id, bool forceMaster);
 
+    // 根据用户名精确查询用户信息
+    User queryByName(const string& name);
+
     // 更新用户的状态信息
     bool updateState(User user);
 

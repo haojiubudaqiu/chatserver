@@ -535,3 +535,38 @@ size_t ChatService::getConnectionCount() {
     lock_guard<mutex> lock(_connMutex);
     return _userConnMap.size();
 }
+
+bool ChatService::sendMessageByMcp(int fromId, int toId, const string& messageContent) {
+    if (messageContent.empty()) return false;
+    
+    chat::OneChatMessage chatMsg;
+    chatMsg.mutable_base()->set_msgid(chat::ONE_CHAT_MSG);
+    chatMsg.mutable_base()->set_fromid(fromId);
+    chatMsg.mutable_base()->set_toid(toId);
+    chatMsg.mutable_base()->set_time(muduo::Timestamp::now().microSecondsSinceEpoch());
+    chatMsg.set_message(messageContent);
+    string serializedMsg = chatMsg.SerializeAsString();
+
+    {
+        lock_guard<mutex> lock(_connMutex);
+        auto it = _userConnMap.find(toId);
+        if (it != _userConnMap.end()) {
+            it->second->send(serializedMsg);
+            LOG_INFO << "[MCP] Sent message from user " << fromId << " to online user " << toId;
+            return true;
+        }
+    }
+
+    User user = _userModel.query(toId);
+    if (user.getState() == "online") {
+        if (_kafkaManager) {
+            _kafkaManager->sendMessage("user_messages", serializedMsg);
+            LOG_INFO << "[MCP] Published message from user " << fromId << " to user " << toId << " via Kafka";
+        }
+        return true;
+    }
+
+    _offlineMsgModel.insert(toId, serializedMsg);
+    LOG_INFO << "[MCP] Stored offline message from user " << fromId << " to user " << toId;
+    return true;
+}

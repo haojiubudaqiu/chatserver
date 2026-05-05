@@ -35,9 +35,9 @@ bool ChatMcpServer::start(uint16_t port) {
     server_ = std::make_unique<mcp::server>(config);
     server_->set_server_info("ChatClusterServer", "1.0.0");
     server_->set_instructions(
-        "This MCP server provides monitoring and management tools for the cluster chat server. "
-        "Use these tools to query server statistics, online users, user information, "
-        "friend lists, and group details."
+        "This MCP server provides monitoring, management, and communication tools for the cluster chat server. "
+        "You can login, query server statistics, online users, user information, friend lists, group details, "
+        "and send private messages to users on behalf of a logged-in account."
     );
 
     registerTools();
@@ -218,5 +218,100 @@ void ChatMcpServer::registerTools() {
         }
     );
 
-    LOG_INFO << "Registered " << 6 << " MCP tools for chat server management";
+    server_->register_tool(
+        mcp::tool_builder("chat_user_login")
+            .with_description("Authenticate a user by their ID and password. Returns user info including friends and groups on success. Use user_id parameter (numeric).")
+            .with_number_param("user_id", "The numeric ID of the user to login as", true)
+            .with_string_param("password", "The user's password", true)
+            .build(),
+        [svc](const json& params, const string&) -> json {
+            int userId = params["user_id"].get<int>();
+            string password = params["password"].get<string>();
+            
+            User user = svc->getUserModel().query(userId, true);
+            if (user.getId() == -1) {
+                return {{"success", false}, {"error", "User not found"}, {"userId", userId}};
+            }
+            if (user.getPwd() != password) {
+                return {{"success", false}, {"error", "Invalid password"}, {"userId", userId}};
+            }
+            if (user.getState() == "online") {
+                return {{"success", false}, {"error", "User is already logged in from another device"}, {"userId", userId}, {"userName", user.getName()}};
+            }
+            
+            vector<User> friends = svc->getFriendModel().query(userId);
+            json friendsJson = json::array();
+            for (const auto& f : friends) {
+                friendsJson.push_back({{"id", f.getId()}, {"name", f.getName()}, {"state", f.getState()}});
+            }
+            
+            vector<Group> groups = svc->getGroupModel().queryGroups(userId);
+            json groupsJson = json::array();
+            for (const auto& g : groups) {
+                groupsJson.push_back({
+                    {"id", g.getId()},
+                    {"name", g.getName()},
+                    {"desc", g.getDesc()},
+                    {"memberCount", g.getUsers().size()}
+                });
+            }
+            
+            return {
+                {"success", true},
+                {"message", "Login successful"},
+                {"userId", user.getId()},
+                {"userName", user.getName()},
+                {"friends", friendsJson},
+                {"friendsCount", friends.size()},
+                {"groups", groupsJson},
+                {"groupsCount", groups.size()}
+            };
+        }
+    );
+
+    server_->register_tool(
+        mcp::tool_builder("chat_send_message")
+            .with_description("Send a private message from one user to another. The sender must be authenticated first via chat_user_login.")
+            .with_number_param("from_user_id", "The sender's numeric user ID", true)
+            .with_number_param("to_user_id", "The recipient's numeric user ID", true)
+            .with_string_param("message", "The message content to send", true)
+            .build(),
+        [svc](const json& params, const string&) -> json {
+            int fromId = params["from_user_id"].get<int>();
+            int toId = params["to_user_id"].get<int>();
+            string message = params["message"].get<string>();
+            
+            if (message.empty()) {
+                return {{"success", false}, {"error", "Message content cannot be empty"}};
+            }
+            if (fromId == toId) {
+                return {{"success", false}, {"error", "Cannot send message to yourself"}};
+            }
+            
+            User fromUser = svc->getUserModel().query(fromId);
+            if (fromUser.getId() == -1) {
+                return {{"success", false}, {"error", "Sender user not found"}, {"fromUserId", fromId}};
+            }
+            
+            User toUser = svc->getUserModel().query(toId);
+            if (toUser.getId() == -1) {
+                return {{"success", false}, {"error", "Recipient user not found"}, {"toUserId", toId}};
+            }
+            
+            bool ok = svc->sendMessageByMcp(fromId, toId, message);
+            if (!ok) {
+                return {{"success", false}, {"error", "Failed to send message"}};
+            }
+            
+            return {
+                {"success", true},
+                {"message", "Message sent successfully"},
+                {"from", {{"id", fromUser.getId()}, {"name", fromUser.getName()}}},
+                {"to", {{"id", toUser.getId()}, {"name", toUser.getName()}}},
+                {"deliveryMethod", toUser.getState() == "online" ? "direct" : "offline_stored"}
+            };
+        }
+    );
+
+    LOG_INFO << "Registered " << 8 << " MCP tools for chat server management";
 }
