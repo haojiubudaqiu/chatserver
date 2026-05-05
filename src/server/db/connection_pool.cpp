@@ -210,10 +210,7 @@ std::shared_ptr<MySQL> ConnectionPool::getSlaveConnection() {
                 slaveConnections_[slaveIndex].size() < static_cast<size_t>(slaveMaxSize_)) {
                 auto conn = createConnection(MySQL::SLAVE, slaveServers_[slaveIndex]);
                 if (conn) {
-                    slaveConnections_[slaveIndex].push(conn);
-                    auto result = conn;
-                    slaveConnections_[slaveIndex].pop();
-                    return result;
+                    return conn;
                 }
             }
             
