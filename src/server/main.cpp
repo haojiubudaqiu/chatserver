@@ -2,6 +2,7 @@
 #include "chatservice.hpp"
 #include "proto_msg_handler.h"
 #include "chat_mcp_server.h"
+#include "log_util.h"
 #include <iostream>
 #include <signal.h>
 #include <cstring>
@@ -15,6 +16,7 @@ void resetHandler(int)
         ChatMcpServer::instance()->stop();
     }
     ChatService::instance()->reset();
+    stopAsyncLogging();
     exit(0);
 }
 
@@ -25,6 +27,9 @@ int main(int argc, char **argv)
         cerr << "command invalid! example: ./ChatServer 127.0.0.1 6000 [--mcp-port 8888]" << endl;
         exit(-1);
     }
+
+    // 初始化异步日志系统（在任何日志输出之前）
+    initAsyncLogging("ChatServer", 100 * 1024 * 1024, 3);
 
     char *ip = argv[1];
     uint16_t port = atoi(argv[2]);
