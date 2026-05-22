@@ -1,3 +1,4 @@
+#include "chat_util.h"
 #include "chatservice.hpp"
 #include "public.hpp"
 #include "message.pb.h"
@@ -61,7 +62,7 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
         chat::BaseMessage errorMsg;
         errorMsg.set_msgid(chat::INVALID_MSG);
         errorMsg.set_time(time.microSecondsSinceEpoch());
-        conn->send(errorMsg.SerializeAsString());
+        sendProtoMsg(conn, errorMsg);
         return;
     }
 
@@ -80,7 +81,7 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
             response.mutable_base()->set_time(time.microSecondsSinceEpoch());
             response.set_err_num(2);
             response.set_errmsg("this account is using, input another!");
-            conn->send(response.SerializeAsString());
+            sendProtoMsg(conn, response);
         }
         else
         {
@@ -144,7 +145,7 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
                 }
             }
 
-            conn->send(response.SerializeAsString());
+            sendProtoMsg(conn, response);
         }
     }
     else
@@ -155,7 +156,7 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
         response.mutable_base()->set_time(time.microSecondsSinceEpoch());
         response.set_err_num(1);
         response.set_errmsg("id or password is invalid!");
-        conn->send(response.SerializeAsString());
+        sendProtoMsg(conn, response);
     }
 }
 
@@ -177,7 +178,7 @@ void ChatService::reg(const TcpConnectionPtr &conn, const string &data, Timestam
         chat::BaseMessage errorMsg;
         errorMsg.set_msgid(chat::INVALID_MSG);
         errorMsg.set_time(time.microSecondsSinceEpoch());
-        conn->send(errorMsg.SerializeAsString());
+        sendProtoMsg(conn, errorMsg);
         return;
     }
     
@@ -193,7 +194,7 @@ void ChatService::reg(const TcpConnectionPtr &conn, const string &data, Timestam
         response.mutable_base()->set_time(time.microSecondsSinceEpoch());
         response.set_err_num(401);
         response.set_errmsg("Invalid name or password length");
-        conn->send(response.SerializeAsString());
+        sendProtoMsg(conn, response);
         return;
     }
     
@@ -214,7 +215,7 @@ void ChatService::reg(const TcpConnectionPtr &conn, const string &data, Timestam
             response.mutable_user()->set_name(user.getName());
             response.mutable_user()->set_password(user.getPwd());
             response.mutable_user()->set_state("offline");
-            conn->send(response.SerializeAsString());
+            sendProtoMsg(conn, response);
         } else {
             // 注册失败
             chat::RegisterResponse response;
@@ -222,7 +223,7 @@ void ChatService::reg(const TcpConnectionPtr &conn, const string &data, Timestam
             response.mutable_base()->set_time(time.microSecondsSinceEpoch());
             response.set_err_num(1);
             response.set_errmsg("Registration failed");
-            conn->send(response.SerializeAsString());
+            sendProtoMsg(conn, response);
         }
     }
     catch (const exception& e) {
@@ -233,7 +234,7 @@ void ChatService::reg(const TcpConnectionPtr &conn, const string &data, Timestam
         response.mutable_base()->set_time(time.microSecondsSinceEpoch());
         response.set_err_num(500);
         response.set_errmsg("Internal server error");
-        conn->send(response.SerializeAsString());
+        sendProtoMsg(conn, response);
     }
 }
 
@@ -249,7 +250,7 @@ void ChatService::loginout(const TcpConnectionPtr &conn, const string &data, Tim
         chat::BaseMessage errorMsg;
         errorMsg.set_msgid(chat::INVALID_MSG);
         errorMsg.set_time(time.microSecondsSinceEpoch());
-        conn->send(errorMsg.SerializeAsString());
+        sendProtoMsg(conn, errorMsg);
         return;
     }
 
@@ -307,7 +308,7 @@ void ChatService::oneChat(const TcpConnectionPtr &conn, const string &data, Time
         chat::BaseMessage errorMsg;
         errorMsg.set_msgid(chat::INVALID_MSG);
         errorMsg.set_time(time.microSecondsSinceEpoch());
-        conn->send(errorMsg.SerializeAsString());
+        sendProtoMsg(conn, errorMsg);
         return;
     }
 
@@ -321,7 +322,7 @@ void ChatService::oneChat(const TcpConnectionPtr &conn, const string &data, Time
         if (it != _userConnMap.end())
         {
             // toid在线且在本服务器，转发消息
-            it->second->send(serializedMsg);
+            sendMsg(it->second, chatMsg.base().msgid(), serializedMsg);
             return;
         }
     }
@@ -354,7 +355,7 @@ void ChatService::addFriend(const TcpConnectionPtr &conn, const string &data, Ti
         chat::BaseMessage errorMsg;
         errorMsg.set_msgid(chat::INVALID_MSG);
         errorMsg.set_time(time.microSecondsSinceEpoch());
-        conn->send(errorMsg.SerializeAsString());
+        sendProtoMsg(conn, errorMsg);
         return;
     }
 
@@ -368,7 +369,7 @@ void ChatService::addFriend(const TcpConnectionPtr &conn, const string &data, Ti
     response.mutable_base()->set_time(time.microSecondsSinceEpoch());
     response.set_err_num(success ? 0 : 1);
     response.set_errmsg(success ? "" : "Failed to add friend");
-    conn->send(response.SerializeAsString());
+    sendProtoMsg(conn, response);
 }
 
 // 创建群组业务
@@ -382,7 +383,7 @@ void ChatService::createGroup(const TcpConnectionPtr &conn, const string &data, 
         chat::BaseMessage errorMsg;
         errorMsg.set_msgid(chat::INVALID_MSG);
         errorMsg.set_time(time.microSecondsSinceEpoch());
-        conn->send(errorMsg.SerializeAsString());
+        sendProtoMsg(conn, errorMsg);
         return;
     }
 
@@ -404,7 +405,7 @@ void ChatService::createGroup(const TcpConnectionPtr &conn, const string &data, 
     response.set_err_num(success ? 0 : 1);
     response.set_errmsg(success ? "" : "Failed to create group");
     if (success) response.set_groupid(group.getId());
-    conn->send(response.SerializeAsString());
+    sendProtoMsg(conn, response);
 }
 
 // 加入群组业务
@@ -418,7 +419,7 @@ void ChatService::addGroup(const TcpConnectionPtr &conn, const string &data, Tim
         chat::BaseMessage errorMsg;
         errorMsg.set_msgid(chat::INVALID_MSG);
         errorMsg.set_time(time.microSecondsSinceEpoch());
-        conn->send(errorMsg.SerializeAsString());
+        sendProtoMsg(conn, errorMsg);
         return;
     }
 
@@ -431,7 +432,7 @@ void ChatService::addGroup(const TcpConnectionPtr &conn, const string &data, Tim
     response.mutable_base()->set_time(time.microSecondsSinceEpoch());
     response.set_err_num(0);
     response.set_errmsg("");
-    conn->send(response.SerializeAsString());
+    sendProtoMsg(conn, response);
 }
 
 void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Timestamp time)
@@ -442,7 +443,7 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
         chat::BaseMessage errorMsg;
         errorMsg.set_msgid(chat::INVALID_MSG);
         errorMsg.set_time(time.microSecondsSinceEpoch());
-        conn->send(errorMsg.SerializeAsString());
+        sendProtoMsg(conn, errorMsg);
         return;
     }
 
@@ -460,7 +461,7 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
             auto it = _userConnMap.find(id);
             if (it != _userConnMap.end())
             {
-                it->second->send(serializedMsg);
+                sendMsg(it->second, chatMsg.base().msgid(), serializedMsg);
             }
             else
             {
@@ -503,7 +504,7 @@ void ChatService::handleKafkaMessage(const string& topic, const string& message)
         for (int id : useridVec) {
             auto it = _userConnMap.find(id);
             if (it != _userConnMap.end()) {
-                it->second->send(message);
+                sendMsg(it->second, groupMsg.base().msgid(), message);
             }
         }
     } else {
@@ -517,7 +518,11 @@ void ChatService::handleKafkaMessage(const string& topic, const string& message)
         lock_guard<mutex> lock(_connMutex);
         auto it = _userConnMap.find(targetUserId);
         if (it != _userConnMap.end()) {
-            it->second->send(message);
+            sendMsg(it->second, baseMsg.msgid(), message);
+        } else {
+            // 用户在其他服务器断开连接但Redis中状态还未更新为offline的情况
+            // 必须存储离线消息，否则消息会丢失
+            _offlineMsgModel.insert(targetUserId, message);
         }
     }
 }
@@ -551,7 +556,7 @@ bool ChatService::sendMessageByMcp(int fromId, int toId, const string& messageCo
         lock_guard<mutex> lock(_connMutex);
         auto it = _userConnMap.find(toId);
         if (it != _userConnMap.end()) {
-            it->second->send(serializedMsg);
+            sendMsg(it->second, chatMsg.base().msgid(), serializedMsg);
             LOG_INFO << "[MCP] Sent message from user " << fromId << " to online user " << toId;
             return true;
         }

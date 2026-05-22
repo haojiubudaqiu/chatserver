@@ -1,17 +1,16 @@
+#include "connection_guard.h"
 #include "usermodel.hpp"
 #include "database_router.h"
 #include "cache_manager.h"
 #include <iostream>
 using namespace std;
 
-UserModel::UserModel() {
-    _cacheManager = CacheManager::instance();
-}
+UserModel::UserModel() {}
 
 // User表的增加方法
 bool UserModel::insert(User &user)
 {
-    auto conn = DatabaseRouter::instance()->routeUpdate();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (!conn) return false;
 
     char name_escaped[256];
@@ -29,14 +28,12 @@ bool UserModel::insert(User &user)
         user.setId(mysql_insert_id(conn->getConnection()));
         
         // 将新用户信息缓存到Redis（高频访问数据）
-        _cacheManager->cacheUser(user);
+        CacheManager::instance()->cacheUser(user);
         
         // 归还连接
-        DatabaseRouter::instance()->returnConnection(conn);
         return true;
     }
     
-    DatabaseRouter::instance()->returnConnection(conn);
     return false;
 }
 
@@ -45,7 +42,7 @@ bool UserModel::insert(User &user)
 User UserModel::query(int id, bool forceMaster)
 {
     // 1. 先从Redis缓存查询（高频访问数据）
-    User cachedUser = _cacheManager->getUser(id);
+    User cachedUser = CacheManager::instance()->getUser(id);
     if (cachedUser.getId() != 0) {
         return cachedUser;
     }
@@ -55,7 +52,7 @@ User UserModel::query(int id, bool forceMaster)
     sprintf(sql, "select * from user where id = %d", id);
 
     // 使用DatabaseRouter获取连接（读操作，默认从库）
-    auto conn = DatabaseRouter::instance()->routeQuery(forceMaster);
+    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery(forceMaster));
     if (!conn) {
         return User();
     }
@@ -73,22 +70,20 @@ User UserModel::query(int id, bool forceMaster)
             user.setState(row[3]);
             mysql_free_result(res);
             
-            _cacheManager->cacheUser(user);
+            CacheManager::instance()->cacheUser(user);
             
-            DatabaseRouter::instance()->returnConnection(conn);
             return user;
         }
         mysql_free_result(res);
     }
     
-    if (conn) DatabaseRouter::instance()->returnConnection(conn);
-    return User();
+    if (conn) return User();
 }
 
 // 根据用户名称查询用户信息
 User UserModel::queryByName(const string& name)
 {
-    auto conn = DatabaseRouter::instance()->routeQuery(true);
+    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery(true));
     if (!conn) {
         return User();
     }
@@ -112,16 +107,14 @@ User UserModel::queryByName(const string& name)
             user.setState(row[3]);
             mysql_free_result(res);
             
-            _cacheManager->cacheUser(user);
+            CacheManager::instance()->cacheUser(user);
             
-            DatabaseRouter::instance()->returnConnection(conn);
             return user;
         }
         mysql_free_result(res);
     }
     
-    if (conn) DatabaseRouter::instance()->returnConnection(conn);
-    return User();
+    if (conn) return User();
 }
 
 // 兼容旧接口，默认不强制读主库
@@ -137,7 +130,7 @@ bool UserModel::updateState(User user)
     sprintf(sql, "update user set state = '%s' where id = %d", user.getState().c_str(), user.getId());
 
     // 写操作，使用主库
-    auto conn = DatabaseRouter::instance()->routeUpdate();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (!conn) {
         return false;
     }
@@ -145,13 +138,11 @@ bool UserModel::updateState(User user)
     if (conn->update(sql))
     {
         // 更新Redis缓存
-        _cacheManager->cacheUserStatus(user.getId(), user.getState());
+        CacheManager::instance()->cacheUserStatus(user.getId(), user.getState());
         
-        DatabaseRouter::instance()->returnConnection(conn);
         return true;
     }
     
-    DatabaseRouter::instance()->returnConnection(conn);
     return false;
 }
 
@@ -160,11 +151,10 @@ void UserModel::resetState()
 {
     char sql[1024] = "update user set state = 'offline' where state = 'online'";
 
-    auto conn = DatabaseRouter::instance()->routeUpdate();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (conn) {
         conn->update(sql);
-        DatabaseRouter::instance()->returnConnection(conn);
-    }
+        }
     
     // 清除所有用户相关的缓存
     // 注意：在实际应用中，可能需要更精细的缓存清理策略

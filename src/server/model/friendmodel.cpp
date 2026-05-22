@@ -1,34 +1,31 @@
+#include "connection_guard.h"
 #include "friendmodel.hpp"
 #include "database_router.h"
 #include "cache_manager.h"
 
-FriendModel::FriendModel() {
-    _cacheManager = CacheManager::instance();
-}
+FriendModel::FriendModel() {}
 
 bool FriendModel::insert(int userid, int friendid)
 {
     char sql[1024] = {0};
     sprintf(sql, "insert ignore into friend values(%d, %d)", userid, friendid);
 
-    auto conn = DatabaseRouter::instance()->routeUpdate();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (!conn) {
         return false;
     }
     
     bool ok = conn->update(sql);
-    DatabaseRouter::instance()->returnConnection(conn);
-    
     if (ok) {
-        _cacheManager->invalidateFriends(userid);
-        _cacheManager->invalidateFriends(friendid);
+        CacheManager::instance()->invalidateFriends(userid);
+        CacheManager::instance()->invalidateFriends(friendid);
     }
     return ok;
 }
 
 vector<User> FriendModel::query(int userid)
 {
-    vector<User> vec = _cacheManager->getFriends(userid);
+    vector<User> vec = CacheManager::instance()->getFriends(userid);
     if (!vec.empty()) {
         return vec;
     }
@@ -36,7 +33,7 @@ vector<User> FriendModel::query(int userid)
     char sql[1024] = {0};
     sprintf(sql, "select a.id,a.name,a.state from user a inner join friend b on b.friendid = a.id where b.userid=%d", userid);
 
-    auto conn = DatabaseRouter::instance()->routeQuery();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery());
     if (!conn) {
         return vec;
     }
@@ -56,9 +53,8 @@ vector<User> FriendModel::query(int userid)
         }
         mysql_free_result(res);
         
-        _cacheManager->cacheFriends(userid, vec);
+        CacheManager::instance()->cacheFriends(userid, vec);
     }
     
-    DatabaseRouter::instance()->returnConnection(conn);
     return vec;
 }

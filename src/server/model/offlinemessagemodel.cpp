@@ -1,10 +1,11 @@
+#include "connection_guard.h"
 #include "offlinemessagemodel.hpp"
 #include "database_router.h"
 #include <cstring>
 
 void OfflineMsgModel::insert(int userid, string msg)
 {
-    auto conn = DatabaseRouter::instance()->routeUpdate();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (!conn || !conn->getConnection()) return;
 
     MYSQL* mysql = conn->getConnection();
@@ -15,19 +16,17 @@ void OfflineMsgModel::insert(int userid, string msg)
                     + std::to_string(userid) + ", '" + escaped.c_str() + "')";
     
     conn->update(sql);
-    DatabaseRouter::instance()->returnConnection(conn);
-}
+    }
 
 void OfflineMsgModel::remove(int userid)
 {
     char sql[1024] = {0};
     sprintf(sql, "delete from offlinemessage where userid=%d", userid);
 
-    auto conn = DatabaseRouter::instance()->routeUpdate();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (conn) {
         conn->update(sql);
-        DatabaseRouter::instance()->returnConnection(conn);
-    }
+        }
 }
 
 vector<string> OfflineMsgModel::query(int userid)
@@ -37,7 +36,7 @@ vector<string> OfflineMsgModel::query(int userid)
 
     vector<string> vec;
     
-    auto conn = DatabaseRouter::instance()->routeQuery();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery());
     if (!conn) {
         return vec;
     }
@@ -54,6 +53,5 @@ vector<string> OfflineMsgModel::query(int userid)
         }
         mysql_free_result(res);
     }
-    DatabaseRouter::instance()->returnConnection(conn);
     return vec;
 }

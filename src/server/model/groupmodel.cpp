@@ -1,15 +1,14 @@
+#include "connection_guard.h"
 #include "groupmodel.hpp"
 #include "database_router.h"
 #include "cache_manager.h"
 
-GroupModel::GroupModel() {
-    _cacheManager = CacheManager::instance();
-}
+GroupModel::GroupModel() {}
 
 // 创建群组
 bool GroupModel::createGroup(Group &group)
 {
-    auto conn = DatabaseRouter::instance()->routeUpdate();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (!conn) {
         return false;
     }
@@ -28,20 +27,18 @@ bool GroupModel::createGroup(Group &group)
         group.setId(mysql_insert_id(conn->getConnection()));
         
         // 缓存群组信息
-        _cacheManager->cacheGroup(group);
+        CacheManager::instance()->cacheGroup(group);
         
-        DatabaseRouter::instance()->returnConnection(conn);
         return true;
     }
     
-    DatabaseRouter::instance()->returnConnection(conn);
     return false;
 }
 
 // 加入群组
 void GroupModel::addGroup(int userid, int groupid, string role)
 {
-    auto conn = DatabaseRouter::instance()->routeUpdate();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (!conn) {
         return;
     }
@@ -54,10 +51,8 @@ void GroupModel::addGroup(int userid, int groupid, string role)
             groupid, userid, role_escaped);
 
     conn->update(sql);
-    DatabaseRouter::instance()->returnConnection(conn);
-    
     // 清除群组缓存
-    _cacheManager->invalidateGroup(groupid);
+    CacheManager::instance()->invalidateGroup(groupid);
 }
 
 // 查询用户所在群组信息
@@ -71,7 +66,7 @@ vector<Group> GroupModel::queryGroups(int userid)
     vector<Group> groupVec;
 
     // 读操作，使用从库
-    auto conn = DatabaseRouter::instance()->routeQuery();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery());
     if (!conn) {
         return groupVec;
     }
@@ -90,8 +85,6 @@ vector<Group> GroupModel::queryGroups(int userid)
         }
         mysql_free_result(res);
     }
-    DatabaseRouter::instance()->returnConnection(conn);
-
     // 查询群组的用户信息
     for (Group &group : groupVec)
     {
@@ -117,8 +110,7 @@ vector<Group> GroupModel::queryGroups(int userid)
             }
             mysql_free_result(res);
         }
-        DatabaseRouter::instance()->returnConnection(conn);
-    }
+        }
     return groupVec;
 }
 
@@ -129,7 +121,7 @@ vector<int> GroupModel::queryGroupUsers(int userid, int groupid)
     sprintf(sql, "select userid from groupuser where groupid = %d and userid != %d", groupid, userid);
 
     vector<int> idVec;
-    auto conn = DatabaseRouter::instance()->routeQuery();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery());
     if (!conn) {
         return idVec;
     }
@@ -144,7 +136,6 @@ vector<int> GroupModel::queryGroupUsers(int userid, int groupid)
         }
         mysql_free_result(res);
     }
-    DatabaseRouter::instance()->returnConnection(conn);
     return idVec;
 }
 
@@ -152,7 +143,7 @@ vector<int> GroupModel::queryGroupUsers(int userid, int groupid)
 Group GroupModel::queryGroup(int groupid)
 {
     // 1. 先从Redis缓存查询（群组是高频访问数据）
-    Group group = _cacheManager->getGroup(groupid);
+    Group group = CacheManager::instance()->getGroup(groupid);
     if (group.getId() != 0) {
         return group;
     }
@@ -161,7 +152,7 @@ Group GroupModel::queryGroup(int groupid)
     char sql[1024] = {0};
     sprintf(sql, "select id, groupname, groupdesc from allgroup where id = %d", groupid);
 
-    auto conn = DatabaseRouter::instance()->routeQuery();
+    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery());
     if (!conn) {
         return Group();
     }
@@ -197,9 +188,8 @@ Group GroupModel::queryGroup(int groupid)
                 mysql_free_result(res2);
             }
             
-        _cacheManager->cacheGroup(group);
+        CacheManager::instance()->cacheGroup(group);
     }
 }
-    DatabaseRouter::instance()->returnConnection(conn);
     return group;
 }

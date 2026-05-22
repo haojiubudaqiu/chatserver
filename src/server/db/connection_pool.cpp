@@ -56,7 +56,7 @@ bool ConnectionPool::initMaster(const std::string& server, const std::string& us
     for (int i = 0; i < masterMaxSize_ / 2; ++i) {
         auto conn = createConnection(MySQL::MASTER, masterServer_);
         if (conn) {
-            masterConnections_.push(conn); // 创建成功，放入空闲队列
+            masterConnections_.push(conn); masterTotalCount_++; // 创建成功，放入空闲队列
         }
     }
     
@@ -78,6 +78,8 @@ bool ConnectionPool::initSlaves(const std::vector<std::string>& servers,
     slaveMaxSize_ = maxSize;
     
     slaveConnections_.resize(slaveServers_.size());
+    slaveTotalCounts_.resize(slaveServers_.size());
+    for(size_t i=0; i<slaveTotalCounts_.size(); ++i) slaveTotalCounts_[i].store(0);
     slaveAvailable_.resize(slaveServers_.size());
     for (size_t i = 0; i < slaveAvailable_.size(); ++i) {
         slaveAvailable_[i].store(true);
@@ -87,7 +89,7 @@ bool ConnectionPool::initSlaves(const std::vector<std::string>& servers,
         for (int j = 0; j < slaveMaxSize_ / 2; ++j) {
             auto conn = createConnection(MySQL::SLAVE, slaveServers_[i]);
             if (conn) {
-                slaveConnections_[i].push(conn);
+                slaveConnections_[i].push(conn); slaveTotalCounts_[i]++;
             }
         }
         LOG_INFO << "Slave " << i << " connection pool initialized with " 
@@ -144,12 +146,13 @@ std::shared_ptr<MySQL> ConnectionPool::getMasterConnection() {
     std::unique_lock<std::mutex> lock(masterMutex_);
     
     // 尝试创建新连接（如果池为空且未达上限） 如果连接池为空且未达到最大连接数，创建新连接
-    if (masterConnections_.empty() && masterConnections_.size() < static_cast<size_t>(masterMaxSize_)) {
+    if (masterConnections_.empty() && masterTotalCount_ < masterMaxSize_) {
 
         // 注意：这里是在锁内创建连接！创建连接是耗时操作，会阻塞其他线程，这是一个可以优化的点。
         auto conn = createConnection(MySQL::MASTER, masterServer_);
         if (conn) {
             masterAvailable_ = true;
+            masterTotalCount_++;
             return conn;// 如果创建成功，直接返回这个新连接
         } else {
             masterAvailable_ = false;
@@ -206,10 +209,10 @@ std::shared_ptr<MySQL> ConnectionPool::getSlaveConnection() {
             std::unique_lock<std::mutex> lock(slaveMutex_);
             
             // 如果连接池为空且未达到最大连接数，创建新连接
-            if (slaveConnections_[slaveIndex].empty() && 
-                slaveConnections_[slaveIndex].size() < static_cast<size_t>(slaveMaxSize_)) {
+            if (slaveConnections_[slaveIndex].empty() && slaveTotalCounts_[slaveIndex] < slaveMaxSize_) {
                 auto conn = createConnection(MySQL::SLAVE, slaveServers_[slaveIndex]);
                 if (conn) {
+                    slaveTotalCounts_[slaveIndex]++;
                     return conn;
                 }
             }
@@ -258,7 +261,7 @@ void ConnectionPool::returnConnection(std::shared_ptr<MySQL> conn) {
     if (conn->getRole() == MySQL::MASTER) {
         // 简单的锁守卫，作用域内加锁解锁
         std::lock_guard<std::mutex> lock(masterMutex_);
-        masterConnections_.push(conn);// 将连接推回主库队列
+        masterConnections_.push(conn); masterTotalCount_++;// 将连接推回主库队列
         masterCondition_.notify_one(); // 通知一个正在等待的线程“有连接可用了”
     } 
     //通过 getServer() 找到它的“家”（对应的队列），然后推回去，再 notify_one()。
@@ -269,7 +272,7 @@ void ConnectionPool::returnConnection(std::shared_ptr<MySQL> conn) {
         bool placed = false;
         for (size_t i = 0; i < slaveServers_.size(); ++i) {
             if (slaveServers_[i] == server) {//遍历查找匹配的从库配置
-                slaveConnections_[i].push(conn);//找到则放入对应的队列
+                slaveConnections_[i].push(conn); slaveTotalCounts_[i]++;//找到则放入对应的队列
                 placed = true;
                 break;
             }

@@ -60,7 +60,7 @@ if(RDKAFKA_LIBRARY AND RDKAFKA++_LIBRARY AND RDKAFKA_INCLUDE_DIR)
         ${PROTOBUF_LIBRARIES}  # Protobuf库
     )
     target_include_directories(ChatServer PRIVATE ${RDKAFKA_INCLUDE_DIR})
-    target_compile_definitions(ChatServer PRIVATE HAS_LIBRDKAFKA)
+    add_compile_definitions(HAS_LIBRDKAFKA)
 else()
     # 如果没有找到librdkafka库，则不链接相关库
     target_link_libraries(ChatServer 
