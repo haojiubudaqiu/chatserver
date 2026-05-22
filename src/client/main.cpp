@@ -264,7 +264,7 @@ void readTaskHandler(int clientfd)
         
         int msgtype = baseMsg.msgid();
         
-        if (ONE_CHAT_MSG == msgtype)
+        if (chat::ONE_CHAT_MSG == msgtype)
         {
             chat::OneChatMessage chatMsg;
             if (chatMsg.ParseFromString(string(buffer, len))) {
@@ -274,7 +274,7 @@ void readTaskHandler(int clientfd)
             continue;
         }
 
-        if (GROUP_CHAT_MSG == msgtype)
+        if (chat::GROUP_CHAT_MSG == msgtype)
         {
             chat::GroupChatMessage groupChatMsg;
             if (groupChatMsg.ParseFromString(string(buffer, len))) {
@@ -285,21 +285,21 @@ void readTaskHandler(int clientfd)
             continue;
         }
 
-        if (LOGIN_MSG_ACK == msgtype)
+        if (chat::LOGIN_MSG_ACK == msgtype)
         {
             doLoginResponse(string(buffer, len));
             sem_post(&rwsem);
             continue;
         }
 
-        if (REG_MSG_ACK == msgtype)
+        if (chat::REG_MSG_ACK == msgtype)
         {
             doRegResponse(string(buffer, len));
             sem_post(&rwsem);
             continue;
         }
 
-        if (ADD_FRIEND_MSG_ACK == msgtype)
+        if (chat::ADD_FRIEND_MSG_ACK == msgtype)
         {
             chat::AddFriendResponse response;
             if (response.ParseFromString(string(buffer, len)))
@@ -313,7 +313,7 @@ void readTaskHandler(int clientfd)
             continue;
         }
 
-        if (CREATE_GROUP_MSG_ACK == msgtype)
+        if (chat::CREATE_GROUP_MSG_ACK == msgtype)
         {
             chat::CreateGroupResponse response;
             if (response.ParseFromString(string(buffer, len)))
@@ -327,7 +327,7 @@ void readTaskHandler(int clientfd)
             continue;
         }
 
-        if (ADD_GROUP_MSG_ACK == msgtype)
+        if (chat::ADD_GROUP_MSG_ACK == msgtype)
         {
             chat::AddGroupResponse response;
             if (response.ParseFromString(string(buffer, len)))
@@ -372,7 +372,7 @@ void showCurrentUserData()
 }
 
 void help(int fd = 0, string str = "");
-void chat(int, string);
+void chat_cmd(int, string);
 void addfriend(int, string);
 void creategroup(int, string);
 void addgroup(int, string);
@@ -390,7 +390,7 @@ unordered_map<string, string> commandMap = {
 
 unordered_map<string, function<void(int, string)>> commandHandlerMap = {
     {"help", help},
-    {"chat", chat},
+    {"chat", chat_cmd},
     {"addfriend", addfriend},
     {"creategroup", creategroup},
     {"addgroup", addgroup},
@@ -453,7 +453,7 @@ void addfriend(int clientfd, string str)
     }
 }
 
-void chat(int clientfd, string str)
+void chat_cmd(int clientfd, string str)
 {
     int idx = str.find(":");
     if (-1 == idx)

@@ -1,7 +1,7 @@
 #include "chatserver.hpp"
 #include "chatservice.hpp"
 #include "proto_msg_handler.h"
-#include "chat_mcp_server.h"
+#include "mcp/chat_mcp_server.h"
 #include "log_util.h"
 #include <iostream>
 #include <signal.h>

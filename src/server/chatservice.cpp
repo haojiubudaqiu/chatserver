@@ -312,7 +312,6 @@ void ChatService::oneChat(const TcpConnectionPtr &conn, const string &data, Time
         return;
     }
 
-    int fromid = chatMsg.base().fromid();
     int toid = chatMsg.base().toid();
     string serializedMsg = chatMsg.SerializeAsString();
 
@@ -461,7 +460,7 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
             auto it = _userConnMap.find(id);
             if (it != _userConnMap.end())
             {
-                sendMsg(it->second, chatMsg.base().msgid(), serializedMsg);
+                sendMsg(it->second, groupChatMsg.base().msgid(), serializedMsg);
             }
             else
             {
