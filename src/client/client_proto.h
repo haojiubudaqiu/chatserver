@@ -1,7 +1,7 @@
 #ifndef CLIENT_PROTO_H
 #define CLIENT_PROTO_H
 
-#include "../server/proto/message.pb.h"
+#include "message.pb.h"
 #include <string>
 
 // 客户端Protobuf消息工具类

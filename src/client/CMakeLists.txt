@@ -12,6 +12,7 @@ add_executable(ChatClient ${SRC_LIST} ${PROTO_SRCS})
 target_include_directories(ChatClient PRIVATE 
     ${PROJECT_SOURCE_DIR}/include/client
     ${PROJECT_SOURCE_DIR}/src/server/proto
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 # 指定可执行文件链接时需要依赖的库文件

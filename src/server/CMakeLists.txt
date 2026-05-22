@@ -40,6 +40,7 @@ add_executable(ChatServer
 target_include_directories(ChatServer PRIVATE 
     ${PROJECT_SOURCE_DIR}/include/server
     ${CMAKE_CURRENT_SOURCE_DIR}/proto
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 # 检查librdkafka库是否存在

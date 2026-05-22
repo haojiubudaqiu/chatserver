@@ -48,8 +48,6 @@ WORKDIR /build
 
 COPY . .
 
-RUN protoc --cpp_out=./src/server/proto ./src/server/proto/message.proto
-
 RUN mkdir -p build && cd build && \
     cmake .. \
     -DCMAKE_PREFIX_PATH=/usr/local \
@@ -77,6 +75,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+COPY --from=builder /usr/local/lib/libprotobuf* /usr/local/lib/
+RUN ldconfig
 
 COPY --from=builder /build/bin ./bin
 
