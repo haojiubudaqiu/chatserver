@@ -35,6 +35,7 @@
 #include <string>
 #include <vector>
 #include <atomic>// 原子操作，用于无锁的轮询计数
+#include <thread>
 
 // MySQL连接池类
 class ConnectionPool {
@@ -151,6 +152,10 @@ private:
     int healthCheckInterval_;  // 健康检查间隔（秒）
     std::thread healthCheckThread_;  // 健康检查线程
     bool running_;  // 运行标志
+    
+    // 连接计数（用于上限检测）
+    std::atomic<int> masterTotalCount_{0};
+    std::vector<std::atomic<int>> slaveTotalCounts_;
 };
 
 #endif

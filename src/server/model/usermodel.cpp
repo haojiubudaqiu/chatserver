@@ -77,7 +77,7 @@ User UserModel::query(int id, bool forceMaster)
         mysql_free_result(res);
     }
     
-    if (conn) return User();
+    return User();
 }
 
 // 根据用户名称查询用户信息
@@ -114,7 +114,7 @@ User UserModel::queryByName(const string& name)
         mysql_free_result(res);
     }
     
-    if (conn) return User();
+    return User();
 }
 
 // 兼容旧接口，默认不强制读主库
