@@ -102,21 +102,26 @@ bool RedisSentinel::getMasterAddrFromSentinel() {
 std::shared_ptr<redisContext> RedisSentinel::getMasterConnection() {
     std::lock_guard<std::mutex> lock(masterMutex_);
     
-    if (masterCtx_ && redisPing(masterCtx_) == REDIS_OK) {
-        return std::shared_ptr<redisContext>(masterCtx_, 
-            [](redisContext*) { });
+    redisContext* ctx = masterCtx_.load();
+    if (ctx) {
+        redisReply* reply = (redisReply*)redisCommand(ctx, "PING");
+        if (reply != nullptr) {
+            freeReplyObject(reply);
+            return std::shared_ptr<redisContext>(ctx, [](redisContext*) { });
+        }
+        // Ping failed, free the context
+        redisFree(ctx);
+        masterCtx_.store(nullptr);
     }
     
     if (getMasterAddrFromSentinel()) {
-        if (masterCtx_) {
-            redisFree(masterCtx_);
-        }
-        masterCtx_ = connectTo(currentMasterHost_, currentMasterPort_);
+        ctx = connectTo(currentMasterHost_, currentMasterPort_);
+        masterCtx_.store(ctx);
     }
     
-    if (masterCtx_) {
-        return std::shared_ptr<redisContext>(masterCtx_, 
-            [](redisContext*) { });
+    ctx = masterCtx_.load();
+    if (ctx) {
+        return std::shared_ptr<redisContext>(ctx, [](redisContext*) { });
     }
     
     return nullptr;

@@ -27,10 +27,9 @@ bool ChatMcpServer::start(uint16_t port) {
     mcp::server::configuration config;
     config.host = "0.0.0.0";
     config.port = port;
-    config.thread_pool_min_size = 1;
-    config.thread_pool_max_size = 4;
+    config.threadpool_size = 4;
     config.max_sessions = 10;
-    config.session_timeout = std::chrono::seconds(60);
+    config.session_timeout = 60;
 
     server_ = std::make_unique<mcp::server>(config);
     server_->set_server_info("ChatClusterServer", "1.0.0");

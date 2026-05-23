@@ -209,10 +209,10 @@ public:
         unsigned int threadpool_size{ std::thread::hardware_concurrency() };
 
         /** Maximum concurrent sessions (0 = unlimited) */
-        unsigned int max_sessions{ MCP_MAX_SESSIONS };
+        unsigned int max_sessions{ 100 };
 
         /** Inactive session timeout in seconds (0 = disabled) */
-        unsigned int session_timeout{ MCP_SESSION_TIMEOUT };
+        unsigned int session_timeout{ 60 };
 
         #ifdef MCP_SSL        
         /**
@@ -451,10 +451,10 @@ private:
     bool running_ = false;
 
     // Max sessions limit
-    unsigned int max_sessions_ = MCP_MAX_SESSIONS;
+    unsigned int max_sessions_ = 100;
 
     // Inactive session timeout
-    unsigned int session_timeout_ = MCP_SESSION_TIMEOUT;
+    unsigned int session_timeout_ = 60;
     
     // Thread pool for async method handlers
     thread_pool thread_pool_;

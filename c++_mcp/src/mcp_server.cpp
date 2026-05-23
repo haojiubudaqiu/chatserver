@@ -10,10 +10,12 @@
 #include <sys/stat.h>
 
 namespace {
+#ifdef MCP_SSL
 bool file_exists(const std::string& path) {
     struct stat st;
     return ::stat(path.c_str(), &st) == 0;
 }
+#endif
 } // anonymous namespace
 
 namespace mcp {
@@ -27,9 +29,9 @@ server::server(const server::configuration& conf)
     , sse_endpoint_(conf.sse_endpoint)
     , msg_endpoint_(conf.msg_endpoint)
     , mcp_endpoint_(conf.mcp_endpoint)
-    , thread_pool_(conf.threadpool_size)
     , max_sessions_(conf.max_sessions)
     , session_timeout_(conf.session_timeout)
+    , thread_pool_(conf.threadpool_size)
 {
     #ifdef MCP_SSL
     if (conf.ssl.server_cert_path && conf.ssl.server_private_key_path) {
@@ -126,6 +128,7 @@ bool server::start(bool blocking) {
     
     // Setup CORS handling
     http_server_->Options(".*", [](const httplib::Request& req, httplib::Response& res) {
+        (void)req;
         res.set_header("Access-Control-Allow-Origin", "*");
         res.set_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
         res.set_header("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id");
@@ -449,6 +452,7 @@ void server::register_resource(const std::string& path, std::shared_ptr<resource
     
     if (method_handlers_.find("resources/list") == method_handlers_.end()) {
         method_handlers_["resources/list"] = [this](const json& params, const std::string& session_id) -> json {
+            (void)params; (void)session_id;
             json resources = json::array();
         
             for (const auto& [uri, res] : resources_) {
@@ -469,6 +473,7 @@ void server::register_resource(const std::string& path, std::shared_ptr<resource
     
     if (method_handlers_.find("resources/subscribe") == method_handlers_.end()) {
         method_handlers_["resources/subscribe"] = [this](const json& params, const std::string& session_id) -> json {
+            (void)session_id;
             if (!params.contains("uri")) {
                 throw mcp_exception(error_code::invalid_params, "Missing 'uri' parameter");
             }
@@ -485,6 +490,7 @@ void server::register_resource(const std::string& path, std::shared_ptr<resource
     
     if (method_handlers_.find("resources/templates/list") == method_handlers_.end()) {
         method_handlers_["resources/templates/list"] = [this](const json& params, const std::string& session_id) -> json {
+            (void)params; (void)session_id;
             json templates_json = json::array();
             for (const auto& tmpl : resource_templates_) {
                 templates_json.push_back({
@@ -561,6 +567,7 @@ void server::register_tool(const tool& tool, tool_handler handler) {
     // Register methods for tool listing and calling
     if (method_handlers_.find("tools/list") == method_handlers_.end()) {
         method_handlers_["tools/list"] = [this](const json& params, const std::string& session_id) -> json {
+            (void)params; (void)session_id;
             json tools_json = json::array();
             for (const auto& [name, tool_pair] : tools_) {
                 tools_json.push_back(tool_pair.first.to_json());
@@ -619,6 +626,7 @@ void server::register_prompt(const prompt& prompt, prompt_handler handler) {
     // Register methods for prompt listing and calling
     if (method_handlers_.find("prompts/list") == method_handlers_.end()) {
         method_handlers_["prompts/list"] = [this](const json& params, const std::string& session_id) -> json {
+            (void)params; (void)session_id;
             json prompts_json = json::array();
             for (const auto& [name, prompt_pair] : prompts_) {
                 prompts_json.push_back(prompt_pair.first.to_json());
@@ -682,6 +690,7 @@ void server::set_auth_handler(auth_handler handler) {
 }
 
 void server::handle_sse(const httplib::Request& req, httplib::Response& res) {
+    (void)req;
     // Enforce session limit
     if (max_sessions_ > 0) {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -1268,6 +1277,7 @@ json server::process_request(const request& req, const std::string& session_id) 
 }
 
 json server::handle_initialize(const request& req, const std::string& session_id) {
+    (void)session_id;
     const json& params = req.params;
 
     // Version negotiation

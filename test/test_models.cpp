@@ -19,6 +19,7 @@ int main() {
     GroupModel groupModel;
     FriendModel friendModel;
     OfflineMsgModel offlineMsgModel;
+    (void)offlineMsgModel;
     
     User u;
     u.setId(999);

@@ -91,9 +91,6 @@ vector<Group> GroupModel::queryGroups(int userid)
         sprintf(sql, "select a.id,a.name,a.state,b.grouprole from user a \
             inner join groupuser b on b.userid = a.id where b.groupid=%d",
                 group.getId());
-
-        conn = DatabaseRouter::instance()->routeQuery();
-        if (!conn) continue;
         
         MYSQL_RES *res = conn->query(sql);
         if (res != nullptr)

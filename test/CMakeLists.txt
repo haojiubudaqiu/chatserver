@@ -23,6 +23,7 @@ set(SERVER_SRC_DIR ${PROJECT_SOURCE_DIR}/../src/server)
 
 # Test DB Pool
 add_executable(test_db_pool test_db_pool.cpp 
+    ${SERVER_SRC_DIR}/db/db.cpp
     ${SERVER_SRC_DIR}/db/connection_pool.cpp 
     ${SERVER_SRC_DIR}/db/database_router.cpp)
 target_link_libraries(test_db_pool pthread mysqlclient muduo_base muduo_net)
@@ -39,6 +40,7 @@ add_executable(test_models test_models.cpp
     ${SERVER_SRC_DIR}/model/friendmodel.cpp
     ${SERVER_SRC_DIR}/model/groupmodel.cpp
     ${SERVER_SRC_DIR}/model/offlinemessagemodel.cpp
+    ${SERVER_SRC_DIR}/db/db.cpp
     ${SERVER_SRC_DIR}/db/connection_pool.cpp 
     ${SERVER_SRC_DIR}/db/database_router.cpp
     ${SERVER_SRC_DIR}/redis/redis_cache.cpp

@@ -9,7 +9,7 @@
 ConnectionPool::ConnectionPool() : port_(3306), masterMaxSize_(10), slaveMaxSize_(10), currentSlaveIndex_(0),
     masterAvailable_(true), healthCheckInterval_(30) {
     // 初始化从库可用状态
-    slaveAvailable_.resize(1);
+    slaveAvailable_ = std::make_unique<std::atomic<bool>[]>(1);
     slaveAvailable_[0] = true;
 }
 
@@ -78,10 +78,10 @@ bool ConnectionPool::initSlaves(const std::vector<std::string>& servers,
     slaveMaxSize_ = maxSize;
     
     slaveConnections_.resize(slaveServers_.size());
-    slaveTotalCounts_.resize(slaveServers_.size());
-    for(size_t i=0; i<slaveTotalCounts_.size(); ++i) slaveTotalCounts_[i].store(0);
-    slaveAvailable_.resize(slaveServers_.size());
-    for (size_t i = 0; i < slaveAvailable_.size(); ++i) {
+    slaveTotalCounts_ = std::make_unique<std::atomic<int>[]>(slaveServers_.size());
+    for(size_t i=0; i<slaveServers_.size(); ++i) slaveTotalCounts_[i].store(0);
+    slaveAvailable_ = std::make_unique<std::atomic<bool>[]>(slaveServers_.size());
+    for (size_t i = 0; i < slaveServers_.size(); ++i) {
         slaveAvailable_[i].store(true);
     }
     

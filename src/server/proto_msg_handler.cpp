@@ -13,7 +13,7 @@ ProtoMsgHandler ProtoMsgHandlerMap::getHandler(chat::MsgType msgType) {
     if (it == _handlerMap.end()) {
         // 返回一个默认的处理器lambda（匿名函数），作为“兜底”处理器，可以检查连接有效且已连接
 
-        return [](const TcpConnectionPtr& conn, const std::string& data, Timestamp time) {
+        return [](const TcpConnectionPtr& conn, const std::string& /*data*/, Timestamp /*time*/) {
             if (conn && conn->connected()) {
                 chat::BaseMessage response;
                 response.set_msgid(chat::INVALID_MSG);

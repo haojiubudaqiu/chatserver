@@ -12,6 +12,7 @@ using namespace std;
 
 int main() {
     ConnectionPool* pool = ConnectionPool::instance();
+    (void)pool; // suppress unused warning
     // pool->init(...) usually connects to a real DB. 
     // If we don't have a real DB running during tests, we can't fully run it without a mock.
     // Let's at least ensure it compiles with the new ConnectionGuard.

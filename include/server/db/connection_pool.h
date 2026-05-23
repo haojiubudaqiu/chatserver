@@ -100,7 +100,7 @@ public:
     
     // 获取指定从库可用状态
     bool isSlaveAvailable(size_t index) const {
-        if (index < slaveAvailable_.size()) {
+        if (index < slaveServers_.size()) {
             return slaveAvailable_[index];
         }
         return false;
@@ -109,8 +109,8 @@ public:
     // 获取可用从库数量
     size_t getAvailableSlaveCount() const {
         size_t count = 0;
-        for (const auto& available : slaveAvailable_) {
-            if (available) count++;
+        for (size_t i = 0; i < slaveServers_.size(); ++i) {
+            if (slaveAvailable_[i]) count++;
         }
         return count;
     }
@@ -147,15 +147,14 @@ private:
     std::atomic<size_t> currentSlaveIndex_;// 原子计数器，用于实现轮询算法
     
     // 健康检查相关
-    std::atomic<bool> masterAvailable_;  // 主库是否可用
-    std::vector<std::atomic<bool>> slaveAvailable_;  // 每个从库是否可用
-    int healthCheckInterval_;  // 健康检查间隔（秒）
-    std::thread healthCheckThread_;  // 健康检查线程
-    bool running_;  // 运行标志
-    
-    // 连接计数（用于上限检测）
+    std::atomic<bool> masterAvailable_{true};  // 主库是否可用
+    std::unique_ptr<std::atomic<bool>[]> slaveAvailable_;  // 每个从库是否可用
+    std::thread healthCheckThread_;
+    std::atomic<bool> running_{false};
+    int healthCheckInterval_{30};
+
     std::atomic<int> masterTotalCount_{0};
-    std::vector<std::atomic<int>> slaveTotalCounts_;
+    std::unique_ptr<std::atomic<int>[]> slaveTotalCounts_;
 };
 
 #endif
