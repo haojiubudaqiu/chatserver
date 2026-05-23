@@ -106,6 +106,7 @@ bool KafkaConsumer::subscribe(const std::string& topic) {
 bool KafkaConsumer::unsubscribe(const std::string& topic) {
 #ifndef HAS_LIBRDKAFKA
     LOG_WARN << "librdkafka not available, cannot unsubscribe from Kafka topic";
+    (void)topic;
     return false;
 #else
     // 检查消费者是否已初始化
