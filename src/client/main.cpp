@@ -18,6 +18,7 @@ using namespace std;
 #include <atomic>
 #include <cerrno>
 #include <cstring>
+#include <ctime>
 
 #include "group.hpp"
 #include "user.hpp"
@@ -34,6 +35,20 @@ atomic_bool g_isLoginSuccess{false};
 void readTaskHandler(int clientfd);
 void mainMenu(int);
 void showCurrentUserData();
+
+bool waitForResponse(int timeoutSec = 10)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += timeoutSec;
+    int ret = sem_timedwait(&rwsem, &ts);
+    if (ret == -1 && errno == ETIMEDOUT)
+    {
+        cerr << "Error: No response from server within " << timeoutSec << " seconds" << endl;
+        return false;
+    }
+    return true;
+}
 
 int main(int argc, char **argv)
 {
@@ -117,8 +132,8 @@ int main(int argc, char **argv)
                 break;
             }
 
-            sem_wait(&rwsem);
-                
+            if (!waitForResponse()) break;
+                 
             if (g_isLoginSuccess) 
             {
                 isMainMenuRunning = true;
@@ -144,7 +159,7 @@ int main(int argc, char **argv)
                 break;
             }
             
-            sem_wait(&rwsem);
+            if (!waitForResponse()) break;
         }
         break;
         case 3:
@@ -490,7 +505,7 @@ void addfriend(int clientfd, string str)
     }
     else
     {
-        sem_wait(&rwsem);
+        waitForResponse();
     }
 }
 
@@ -537,7 +552,7 @@ void creategroup(int clientfd, string str)
     }
     else
     {
-        sem_wait(&rwsem);
+        waitForResponse();
     }
 }
 
@@ -553,7 +568,7 @@ void addgroup(int clientfd, string str)
     }
     else
     {
-        sem_wait(&rwsem);
+        waitForResponse();
     }
 }
 
