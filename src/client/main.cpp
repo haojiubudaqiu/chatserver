@@ -81,6 +81,12 @@ int main(int argc, char **argv)
         cout << "choice:";
         int choice = 0;
         cin >> choice;
+        if (cin.fail()) {
+            cin.clear();
+            cin.ignore(10000, '\n');
+            cerr << "无效输入，请输入数字！" << endl;
+            continue;
+        }
         cin.get();
 
         switch (choice)
@@ -252,15 +258,8 @@ void doLoginResponse(const string& responseData)
     }
 }
 
-void handleServerMessage(const string& data)
+void handleServerMessage(int msgtype, const string& data)
 {
-    chat::BaseMessage baseMsg;
-    if (!baseMsg.ParseFromString(data)) {
-        return;
-    }
-    
-    int msgtype = baseMsg.msgid();
-    
     if (chat::ONE_CHAT_MSG == msgtype)
     {
         chat::OneChatMessage chatMsg;
@@ -372,10 +371,15 @@ void readTaskHandler(int clientfd)
             int totalLen = 4 + bodyLen;
             if (inputBuffer.size() < (size_t)totalLen) break;
 
+            int32_t msgid = (unsigned char)inputBuffer[4] << 24 |
+                            (unsigned char)inputBuffer[5] << 16 |
+                            (unsigned char)inputBuffer[6] << 8 |
+                            (unsigned char)inputBuffer[7];
+
             string payload = inputBuffer.substr(8, bodyLen - 4);
             inputBuffer.erase(0, totalLen);
 
-            handleServerMessage(payload);
+            handleServerMessage(msgid, payload);
         }
     }
 }
@@ -482,7 +486,7 @@ void addfriend(int clientfd, string str)
     int len = send(clientfd, buffer.c_str(), buffer.size(), 0);
     if (len == -1)
     {
-        cerr << "send addfriend msg error -> " << buffer << endl;
+        cerr << "send addfriend msg error" << endl;
     }
     else
     {
@@ -508,7 +512,7 @@ void chat_cmd(int clientfd, string str)
     int len = send(clientfd, buffer.c_str(), buffer.size(), 0);
     if (len == -1)
     {
-        cerr << "send chat msg error -> " << buffer << endl;
+        cerr << "send chat msg error" << endl;
     }
 }
 
@@ -529,7 +533,7 @@ void creategroup(int clientfd, string str)
     int len = send(clientfd, buffer.c_str(), buffer.size(), 0);
     if (len == -1)
     {
-        cerr << "send creategroup msg error -> " << buffer << endl;
+        cerr << "send creategroup msg error" << endl;
     }
     else
     {
@@ -545,7 +549,7 @@ void addgroup(int clientfd, string str)
     int len = send(clientfd, buffer.c_str(), buffer.size(), 0);
     if (len == -1)
     {
-        cerr << "send addgroup msg error -> " << buffer << endl;
+        cerr << "send addgroup msg error" << endl;
     }
     else
     {
@@ -571,7 +575,7 @@ void groupchat(int clientfd, string str)
     int len = send(clientfd, buffer.c_str(), buffer.size(), 0);
     if (len == -1)
     {
-        cerr << "send groupchat msg error -> " << buffer << endl;
+        cerr << "send groupchat msg error" << endl;
     }
 }
 
