@@ -33,4 +33,6 @@ resources/
 # MCP library - exclude test framework and build artifacts
 c++_mcp/test/googletest/
 c++_mcp/build/
-c++_mcp/examples/*.png
+c++_mcp/examples/*.png*.pyc
+__pycache__/
+message_pb2.py
