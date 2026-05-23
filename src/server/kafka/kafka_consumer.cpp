@@ -74,16 +74,12 @@ bool KafkaConsumer::init() {
 
 
 // 订阅主题
-bool KafkaConsumer::subscribe(const std::string& /*topic*/) {
-    // 暂未实现
+bool KafkaConsumer::subscribe(const std::string& topic) {
+#ifndef HAS_LIBRDKAFKA
+    LOG_WARN << "librdkafka not available, cannot subscribe to Kafka topic";
+    (void)topic;
     return false;
-}
-
-bool KafkaConsumer::unsubscribe(const std::string& /*topic*/) {
-    // 暂未实现
-    return false;
-}
-    
+#else
     rd_kafka_topic_partition_list_t *topics = rd_kafka_topic_partition_list_new(1);
     rd_kafka_topic_partition_list_add(topics, topic.c_str(), RD_KAFKA_PARTITION_UA);
     rd_kafka_resp_err_t err = rd_kafka_subscribe(static_cast<rd_kafka_t*>(consumer_), topics);
