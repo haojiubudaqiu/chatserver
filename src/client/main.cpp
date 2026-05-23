@@ -16,6 +16,8 @@ using namespace std;
 #include <arpa/inet.h>
 #include <semaphore.h>
 #include <atomic>
+#include <cerrno>
+#include <cstring>
 
 #include "group.hpp"
 #include "user.hpp"
@@ -87,8 +89,14 @@ int main(int argc, char **argv)
         {
             int id = 0;
             char pwd[50] = {0};
-            cout << "userid:";
+            cout << "userid (数字,注册时获得的ID):";
             cin >> id;
+            if (cin.fail()) {
+                cin.clear();
+                cin.ignore(10000, '\n');
+                cerr << "请输入数字ID" << endl;
+                break;
+            }
             cin.get();
             cout << "userpassword:";
             cin.getline(pwd, 50);
@@ -99,7 +107,8 @@ int main(int argc, char **argv)
             int len = send(clientfd, request.c_str(), request.size(), 0);
             if (len == -1)
             {
-                cerr << "send login msg error:" << request << endl;
+                cerr << "send login msg error (errno=" << errno << "): " << strerror(errno) << endl;
+                break;
             }
 
             sem_wait(&rwsem);
@@ -125,7 +134,8 @@ int main(int argc, char **argv)
             int len = send(clientfd, request.c_str(), request.size(), 0);
             if (len == -1)
             {
-                cerr << "send reg msg error:" << request << endl;
+                cerr << "send reg msg error (errno=" << errno << "): " << strerror(errno) << endl;
+                break;
             }
             
             sem_wait(&rwsem);
@@ -242,103 +252,130 @@ void doLoginResponse(const string& responseData)
     }
 }
 
+void handleServerMessage(const string& data)
+{
+    chat::BaseMessage baseMsg;
+    if (!baseMsg.ParseFromString(data)) {
+        return;
+    }
+    
+    int msgtype = baseMsg.msgid();
+    
+    if (chat::ONE_CHAT_MSG == msgtype)
+    {
+        chat::OneChatMessage chatMsg;
+        if (chatMsg.ParseFromString(data)) {
+            cout << chatMsg.base().time() << " [" << chatMsg.base().fromid() << "]" 
+                 << " said: " << chatMsg.message() << endl;
+        }
+        return;
+    }
+
+    if (chat::GROUP_CHAT_MSG == msgtype)
+    {
+        chat::GroupChatMessage groupChatMsg;
+        if (groupChatMsg.ParseFromString(data)) {
+            cout << "群消息[" << groupChatMsg.groupid() << "]:" << groupChatMsg.base().time() 
+                 << " [" << groupChatMsg.base().fromid() << "]" 
+                 << " said: " << groupChatMsg.message() << endl;
+        }
+        return;
+    }
+
+    if (chat::LOGIN_MSG_ACK == msgtype)
+    {
+        doLoginResponse(data);
+        sem_post(&rwsem);
+        return;
+    }
+
+    if (chat::REG_MSG_ACK == msgtype)
+    {
+        doRegResponse(data);
+        sem_post(&rwsem);
+        return;
+    }
+
+    if (chat::ADD_FRIEND_MSG_ACK == msgtype)
+    {
+        chat::AddFriendResponse response;
+        if (response.ParseFromString(data))
+        {
+            if (response.err_num() == 0)
+                cout << "Friend added successfully!" << endl;
+            else
+                cerr << "Add friend failed: " << response.errmsg() << endl;
+        }
+        sem_post(&rwsem);
+        return;
+    }
+
+    if (chat::CREATE_GROUP_MSG_ACK == msgtype)
+    {
+        chat::CreateGroupResponse response;
+        if (response.ParseFromString(data))
+        {
+            if (response.err_num() == 0)
+                cout << "Group created successfully, groupid: " << response.groupid() << endl;
+            else
+                cerr << "Create group failed: " << response.errmsg() << endl;
+        }
+        sem_post(&rwsem);
+        return;
+    }
+
+    if (chat::ADD_GROUP_MSG_ACK == msgtype)
+    {
+        chat::AddGroupResponse response;
+        if (response.ParseFromString(data))
+        {
+            if (response.err_num() == 0)
+                cout << "Joined group successfully!" << endl;
+            else
+                cerr << "Join group failed: " << response.errmsg() << endl;
+        }
+        sem_post(&rwsem);
+        return;
+    }
+}
+
 void readTaskHandler(int clientfd)
 {
+    string inputBuffer;
+    char buf[65536];
+
     for (;;)
     {
-        char buffer[4096] = {0};
-        int len = recv(clientfd, buffer, sizeof(buffer) - 1, 0);
-        if (-1 == len || 0 == len)
+        int len = recv(clientfd, buf, sizeof(buf), 0);
+        if (len <= 0)
         {
+            cerr << "disconnected from server" << endl;
             close(clientfd);
             exit(-1);
         }
-        
-        buffer[len] = '\0';
 
-        chat::BaseMessage baseMsg;
-        if (!baseMsg.ParseFromString(string(buffer, len))) {
-            cerr << "Failed to parse base message" << endl;
-            continue;
-        }
-        
-        int msgtype = baseMsg.msgid();
-        
-        if (chat::ONE_CHAT_MSG == msgtype)
-        {
-            chat::OneChatMessage chatMsg;
-            if (chatMsg.ParseFromString(string(buffer, len))) {
-                cout << chatMsg.base().time() << " [" << chatMsg.base().fromid() << "]" 
-                     << " said: " << chatMsg.message() << endl;
-            }
-            continue;
-        }
+        inputBuffer.append(buf, len);
 
-        if (chat::GROUP_CHAT_MSG == msgtype)
+        while (inputBuffer.size() >= 8)
         {
-            chat::GroupChatMessage groupChatMsg;
-            if (groupChatMsg.ParseFromString(string(buffer, len))) {
-                cout << "群消息[" << groupChatMsg.groupid() << "]:" << groupChatMsg.base().time() 
-                     << " [" << groupChatMsg.base().fromid() << "]" 
-                     << " said: " << groupChatMsg.message() << endl;
-            }
-            continue;
-        }
+            int32_t bodyLen = (unsigned char)inputBuffer[0] << 24 |
+                              (unsigned char)inputBuffer[1] << 16 |
+                              (unsigned char)inputBuffer[2] << 8 |
+                              (unsigned char)inputBuffer[3];
 
-        if (chat::LOGIN_MSG_ACK == msgtype)
-        {
-            doLoginResponse(string(buffer, len));
-            sem_post(&rwsem);
-            continue;
-        }
-
-        if (chat::REG_MSG_ACK == msgtype)
-        {
-            doRegResponse(string(buffer, len));
-            sem_post(&rwsem);
-            continue;
-        }
-
-        if (chat::ADD_FRIEND_MSG_ACK == msgtype)
-        {
-            chat::AddFriendResponse response;
-            if (response.ParseFromString(string(buffer, len)))
+            if (bodyLen <= 4 || bodyLen > 65536)
             {
-                if (response.err_num() == 0)
-                    cout << "Friend added successfully!" << endl;
-                else
-                    cerr << "Add friend failed: " << response.errmsg() << endl;
+                inputBuffer.erase(0, 4);
+                continue;
             }
-            sem_post(&rwsem);
-            continue;
-        }
 
-        if (chat::CREATE_GROUP_MSG_ACK == msgtype)
-        {
-            chat::CreateGroupResponse response;
-            if (response.ParseFromString(string(buffer, len)))
-            {
-                if (response.err_num() == 0)
-                    cout << "Group created successfully, groupid: " << response.groupid() << endl;
-                else
-                    cerr << "Create group failed: " << response.errmsg() << endl;
-            }
-            sem_post(&rwsem);
-            continue;
-        }
+            int totalLen = 4 + bodyLen;
+            if (inputBuffer.size() < (size_t)totalLen) break;
 
-        if (chat::ADD_GROUP_MSG_ACK == msgtype)
-        {
-            chat::AddGroupResponse response;
-            if (response.ParseFromString(string(buffer, len)))
-            {
-                if (response.err_num() == 0)
-                    cout << "Joined group successfully!" << endl;
-                else
-                    cerr << "Join group failed: " << response.errmsg() << endl;
-            }
-            sem_post(&rwsem);
-            continue;
+            string payload = inputBuffer.substr(8, bodyLen - 4);
+            inputBuffer.erase(0, totalLen);
+
+            handleServerMessage(payload);
         }
     }
 }
