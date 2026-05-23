@@ -59,16 +59,10 @@ bool KafkaProducer::sendMessage(const std::string& message) {
 }
 
 // 发送消息到指定主题
-bool KafkaProducer::sendMessage(const std::string& topic, const std::string& message) {
-#ifndef HAS_LIBRDKAFKA
-    LOG_WARN << "librdkafka not available, cannot send Kafka message";
+bool KafkaProducer::sendMessage(const std::string& /*topic*/, const std::string& /*message*/) {
+    // 暂未实现
     return false;
-#else
-    // 检查生产者是否已初始化
-    if (producer_ == nullptr) {
-        LOG_ERROR << "Kafka producer not initialized";
-        return false;
-    }
+}
 
     // 创建Kafka主题对象
     rd_kafka_topic_t *rkt = rd_kafka_topic_new(static_cast<rd_kafka_t*>(producer_), topic.c_str(), nullptr);

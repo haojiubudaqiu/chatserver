@@ -59,7 +59,7 @@ void LogFile::append_unlocked(const char* logline, int len)
 {
     file_->append(logline, len);
     
-    if (file_->writtenBytes() > rollSize_)
+    if (static_cast<size_t>(file_->writtenBytes()) > rollSize_)
     {
         rollFile();
     }
