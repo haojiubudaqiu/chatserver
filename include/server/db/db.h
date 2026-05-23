@@ -61,8 +61,11 @@ public:
     //静态方法 - 连接池管理
     // 连接池初始化
     static bool initConnectionPool(const std::string& server, const std::string& user,
-                                  const std::string& password, const std::string& dbname,
-                                  int port = 3306, int maxSize = 10);
+                                   const std::string& password, const std::string& dbname,
+                                   int port = 3306, int maxSize = 10);
+
+    // 从环境变量读取配置并初始化连接池
+    static bool initEnvConnectionPool();
     
     // 从连接池中获取一个可用的数据库连接（包装在智能指针中，无需手动管理生命周期）
     static std::shared_ptr<MySQL> getConnectionFromPool();

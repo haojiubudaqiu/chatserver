@@ -108,6 +108,12 @@ bool MySQL::initConnectionPool(const std::string& server, const std::string& use
     return true;
 }
 
+// 从环境变量读取配置并初始化连接池
+bool MySQL::initEnvConnectionPool() {
+    loadEnvConfig();
+    return initConnectionPool(master_server, ::user, ::password, dbname, master_port, 10);
+}
+
 // 从连接池获取连接
 std::shared_ptr<MySQL> MySQL::getConnectionFromPool() {
     if (useConnectionPool) {

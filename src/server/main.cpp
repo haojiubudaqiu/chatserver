@@ -3,6 +3,7 @@
 #include "proto_msg_handler.h"
 #include "mcp/chat_mcp_server.h"
 #include "log_util.h"
+#include "db.h"
 #include <iostream>
 #include <signal.h>
 #include <cstring>
@@ -63,6 +64,8 @@ int main(int argc, char **argv)
             cerr << "Warning: Failed to start MCP server on port " << g_mcpPort << endl;
         }
     }
+
+    MySQL::initEnvConnectionPool();
 
     server.start();
     loop.loop();
