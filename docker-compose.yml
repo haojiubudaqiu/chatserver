@@ -144,7 +144,7 @@ services:
 
   # ZooKeeper (Kafka 依赖)
   zookeeper:
-    image: confluentinc/cp-zookeeper:latest
+    image: confluentinc/cp-zookeeper:7.6.1
     container_name: chat_zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
@@ -155,7 +155,7 @@ services:
 
   # Kafka
   kafka:
-    image: confluentinc/cp-kafka:latest
+    image: confluentinc/cp-kafka:7.6.1
     container_name: chat_kafka
     depends_on:
       - zookeeper
@@ -164,9 +164,9 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_PROCESS_ROLES: broker
     networks:
       - chat_network
     restart: unless-stopped
