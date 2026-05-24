@@ -26,7 +26,6 @@ ChatService::ChatService()
     if (hasSentinel) {
         std::vector<std::string> sentinelAddrs = {redisSentinel1, redisSentinel2, redisSentinel3};
         if (!CacheManager::instance()->initWithSentinel(sentinelAddrs, "mymaster")) {
-            LOG_WARN << "Sentinel init failed, falling back to direct Redis connection";
             CacheManager::instance()->init();
         }
     } else {

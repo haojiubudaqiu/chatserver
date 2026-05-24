@@ -46,7 +46,7 @@ int main(int argc, char **argv)
     EventLoop loop;
     InetAddress addr(ip, port);
     ChatServer server(&loop, addr, "ChatServer");
-
+    
     ProtoMsgHandlerMap* handlerMap = ProtoMsgHandlerMap::instance();
     handlerMap->registerHandler(chat::LOGIN_MSG, std::bind(&ChatService::login, ChatService::instance(), std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     handlerMap->registerHandler(chat::REG_MSG, std::bind(&ChatService::reg, ChatService::instance(), std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));

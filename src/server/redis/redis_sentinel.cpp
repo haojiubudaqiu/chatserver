@@ -180,7 +180,11 @@ void RedisSentinel::startListen() {
     
     running_ = true;
     listenThread_ = std::thread([this]() {
-        listenSentinel();
+        try {
+            listenSentinel();
+        } catch (const std::exception& e) {
+            std::cerr << "RedisSentinel listen thread exception: " << e.what() << std::endl;
+        }
     });
 }
 
@@ -200,6 +204,18 @@ void RedisSentinel::listenSentinel() {
         redisReply* reply = nullptr;
         if (REDIS_OK == redisGetReply(sentinelCtx_, (void**)&reply)) {
             if (reply && reply->type == REDIS_REPLY_ARRAY && reply->elements >= 3) {
+                // Check that all 3 elements are non-null strings before accessing str
+                if (!reply->element[0] || !reply->element[1] || !reply->element[2]) {
+                    if (reply) freeReplyObject(reply);
+                    continue;
+                }
+                // (subscribe acknowledgments have integer 3rd element)
+                if (reply->element[0]->type != REDIS_REPLY_STRING ||
+                    reply->element[1]->type != REDIS_REPLY_STRING ||
+                    reply->element[2]->type != REDIS_REPLY_STRING) {
+                    if (reply) freeReplyObject(reply);
+                    continue;
+                }
                 std::string msgType(reply->element[0]->str);
                 std::string channel(reply->element[1]->str);
                 std::string message(reply->element[2]->str);

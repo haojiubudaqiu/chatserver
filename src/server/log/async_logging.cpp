@@ -1,5 +1,6 @@
 #include "async_logging.h"
 #include "log_file.h"
+#include <iostream>
 #include <muduo/base/Timestamp.h>
 #include <muduo/base/TimeZone.h>
 #include <stdio.h>
@@ -117,6 +118,22 @@ void AsyncLogging::threadFunc()
             if (!hasFull)
             {
                 cond_.waitForSeconds(flushInterval_);
+                // 超时后再次检查，如果仍然没有满的缓冲区，强制刷当前写缓冲区
+                hasFull = full_[0].load(std::memory_order_acquire) || 
+                          full_[1].load(std::memory_order_acquire);
+                if (!hasFull)
+                {
+                    int idx = writeIndex_.load(std::memory_order_acquire);
+                    if (buffers_[idx]->length() > 0)
+                    {
+                        // 强制标记当前缓冲区为满，然后切换
+                        full_[idx].store(true, std::memory_order_release);
+                        int next = 1 - idx;
+                        writeIndex_.store(next, std::memory_order_release);
+                        buffers_[next]->reset();
+                        hasFull = true;
+                    }
+                }
             }
             
             // 收集所有满的缓冲区

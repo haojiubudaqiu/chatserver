@@ -1,4 +1,5 @@
 #include "kafka_manager.h"
+#include <iostream>
 #include <muduo/base/Logging.h>
 #include <thread>
 

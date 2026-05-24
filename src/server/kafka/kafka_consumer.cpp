@@ -164,7 +164,12 @@ void KafkaConsumer::startConsume() {
                 }
             } else {
                 // Process the message 处理正常消息
-                // 从消息负载创建字符串
+                // 从消息负载创建字符串（注意：payload可能为NULL，len可能为0）
+                if (rkmessage->payload == nullptr || rkmessage->len == 0) {
+                    LOG_WARN << "Received Kafka message with empty payload";
+                    rd_kafka_message_destroy(rkmessage);
+                    continue;
+                }
                 std::string message(static_cast<char*>(rkmessage->payload), rkmessage->len);
                 // 获取主题名称（如果可用）
                 std::string topic(rkmessage->rkt ? rd_kafka_topic_name(rkmessage->rkt) : "unknown");

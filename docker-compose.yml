@@ -113,6 +113,7 @@ services:
       - chat_network
     depends_on:
       - redis
+    restart: unless-stopped
 
   # Redis Sentinel 2
   redis-sentinel2:
@@ -127,6 +128,7 @@ services:
       - chat_network
     depends_on:
       - redis
+    restart: unless-stopped
 
   # Redis Sentinel 3
   redis-sentinel3:
@@ -141,6 +143,7 @@ services:
       - chat_network
     depends_on:
       - redis
+    restart: unless-stopped
 
   # ZooKeeper (Kafka 依赖)
   zookeeper:

@@ -25,11 +25,7 @@ bool FriendModel::insert(int userid, int friendid)
 
 vector<User> FriendModel::query(int userid)
 {
-    vector<User> vec = CacheManager::instance()->getFriends(userid);
-    if (!vec.empty()) {
-        return vec;
-    }
-    
+    vector<User> vec;
     char sql[1024] = {0};
     sprintf(sql, "select a.id,a.name,a.state from user a inner join friend b on b.friendid = a.id where b.userid=%d", userid);
 

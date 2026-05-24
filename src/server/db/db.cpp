@@ -59,9 +59,7 @@ string getSlaveServers() {
 // 初始化数据库连接
 MySQL::MySQL(DBRole role)
 {   
-    // mysql_init(NULL) 是C API函数，分配并初始化一个MYSQL对象，为连接做准备。
     _conn = mysql_init(nullptr);
-    // 将传入的角色参数保存到成员变量中
     _role = role;
 }
 

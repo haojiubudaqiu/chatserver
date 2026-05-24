@@ -1,4 +1,5 @@
 #include "connection_pool.h"
+#include <iostream>
 #include <muduo/base/Logging.h>
 #include <mysql/mysql.h>
 #include <sstream>
@@ -92,8 +93,14 @@ bool ConnectionPool::initSlaves(const std::vector<std::string>& servers,
                 slaveConnections_[i].push(conn); slaveTotalCounts_[i]++;
             }
         }
-        LOG_INFO << "Slave " << i << " connection pool initialized with " 
-                 << slaveConnections_[i].size() << " connections";
+        if (slaveConnections_[i].empty()) {
+            slaveAvailable_[i].store(false);
+            LOG_ERROR << "Slave " << i << " (" << slaveServers_[i]
+                      << ") initialization failed - no connections created, marking unavailable";
+        } else {
+            LOG_INFO << "Slave " << i << " connection pool initialized with " 
+                     << slaveConnections_[i].size() << " connections";
+        }
     }
     
     return true;
@@ -215,11 +222,27 @@ std::shared_ptr<MySQL> ConnectionPool::getSlaveConnection() {
                     slaveTotalCounts_[slaveIndex]++;
                     return conn;
                 }
+                // 创建连接失败，标记从库不可用，继续尝试下一个从库
+                slaveAvailable_[slaveIndex] = false;
+                LOG_ERROR << "Failed to create connection to slave " << slaveIndex
+                          << " (" << slaveServers_[slaveIndex] << "), marking unavailable";
+                retryCount++;
+                continue;
             }
             
-            // 等待可用连接
+            // 等待可用连接（带超时，防止永久阻塞）
             while (slaveConnections_[slaveIndex].empty()) {
-                slaveCondition_.wait(lock);
+                if (slaveCondition_.wait_for(lock, std::chrono::seconds(5))
+                    == std::cv_status::timeout) {
+                    slaveAvailable_[slaveIndex] = false;
+                    LOG_ERROR << "Timeout waiting for slave " << slaveIndex
+                              << " connection, marking unavailable";
+                    retryCount++;
+                    break;
+                }
+            }
+            if (slaveConnections_[slaveIndex].empty()) {
+                continue; // 超时无连接，尝试下一个从库
             }
             
             auto conn = slaveConnections_[slaveIndex].front();
@@ -231,7 +254,8 @@ std::shared_ptr<MySQL> ConnectionPool::getSlaveConnection() {
                 conn = createConnection(MySQL::SLAVE, slaveServers_[slaveIndex]);
                 if (!conn) {
                     slaveAvailable_[slaveIndex] = false;
-                    LOG_ERROR << "Failed to create connection to slave " << slaveIndex;
+                    LOG_ERROR << "Failed to create connection to slave " << slaveIndex
+                              << " (" << slaveServers_[slaveIndex] << "), marking unavailable";
                     retryCount++;
                     continue;
                 }
@@ -314,10 +338,14 @@ void ConnectionPool::startHealthCheck(int intervalSeconds) {
     healthCheckInterval_ = intervalSeconds;
     running_ = true;
     healthCheckThread_ = std::thread([this]() {
-        while (running_) {
-            std::this_thread::sleep_for(std::chrono::seconds(healthCheckInterval_));
-            if (!running_) break;
-            performHealthCheck();
+        try {
+            while (running_) {
+                std::this_thread::sleep_for(std::chrono::seconds(healthCheckInterval_));
+                if (!running_) break;
+                performHealthCheck();
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Health check thread exception: " << e.what() << std::endl;
         }
     });
     LOG_INFO << "Health check thread started, interval: " << healthCheckInterval_ << "s";

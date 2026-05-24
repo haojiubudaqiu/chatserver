@@ -2,7 +2,6 @@
 #include "usermodel.hpp"
 #include "database_router.h"
 #include "cache_manager.h"
-#include <iostream>
 using namespace std;
 
 UserModel::UserModel() {}
