@@ -232,8 +232,6 @@ bool MySQL::update(string sql)
 {
     if (mysql_query(_conn, sql.c_str()))
     {
-        LOG_INFO << __FILE__ << ":" << __LINE__ << ":"
-                 << sql << "更新失败!";
         return false;
     }
 

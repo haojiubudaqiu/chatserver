@@ -175,6 +175,7 @@ std::shared_ptr<MySQL> ConnectionPool::getMasterConnection() {
     // 4. 从池中取出一个连接
     auto conn = masterConnections_.front();
     masterConnections_.pop();
+    masterTotalCount_--;
     
     // 5. 检查连接健康性
     //    连接可能因为网络波动、数据库重启等原因已经失效。
@@ -247,6 +248,7 @@ std::shared_ptr<MySQL> ConnectionPool::getSlaveConnection() {
             
             auto conn = slaveConnections_[slaveIndex].front();
             slaveConnections_[slaveIndex].pop();
+            slaveTotalCounts_[slaveIndex]--;
             
             // 检查连接是否仍然有效
             if (conn && mysql_ping(conn->getConnection()) != 0) {
@@ -285,7 +287,7 @@ void ConnectionPool::returnConnection(std::shared_ptr<MySQL> conn) {
     if (conn->getRole() == MySQL::MASTER) {
         // 简单的锁守卫，作用域内加锁解锁
         std::lock_guard<std::mutex> lock(masterMutex_);
-        masterConnections_.push(conn); masterTotalCount_++;// 将连接推回主库队列
+        masterConnections_.push(conn);
         masterCondition_.notify_one(); // 通知一个正在等待的线程“有连接可用了”
     } 
     //通过 getServer() 找到它的“家”（对应的队列），然后推回去，再 notify_one()。
@@ -296,7 +298,7 @@ void ConnectionPool::returnConnection(std::shared_ptr<MySQL> conn) {
         bool placed = false;
         for (size_t i = 0; i < slaveServers_.size(); ++i) {
             if (slaveServers_[i] == server) {//遍历查找匹配的从库配置
-                slaveConnections_[i].push(conn); slaveTotalCounts_[i]++;//找到则放入对应的队列
+                slaveConnections_[i].push(conn);
                 placed = true;
                 break;
             }

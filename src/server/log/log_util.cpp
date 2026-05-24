@@ -6,6 +6,8 @@ std::unique_ptr<AsyncLogging> g_asyncLog;
 
 void asyncLogOutput(const char* msg, int len)
 {
+    // 同时输出到 stderr，使 docker compose logs 可见
+    fwrite(msg, 1, len, stderr);
     if (g_asyncLog)
     {
         g_asyncLog->append(msg, len);
