@@ -3,7 +3,7 @@
 #define CONNECTION_GUARD_H
 
 #include <memory>
-#include "mysql.h"
+#include <mysql/mysql.h>
 #include "database_router.h"
 
 class ConnectionGuard {
