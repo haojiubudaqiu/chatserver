@@ -97,6 +97,7 @@ int main(int argc, char **argv)
         int choice = 0;
         cin >> choice;
         if (cin.fail()) {
+            if (cin.eof()) break;
             cin.clear();
             cin.ignore(10000, '\n');
             cerr << "无效输入，请输入数字！" << endl;
@@ -461,6 +462,7 @@ void mainMenu(int clientfd)
     while (isMainMenuRunning)
     {
         cin.getline(buffer, 1024);
+        if (cin.fail()) break;
         string commandbuf(buffer);
         string command;
         int idx = commandbuf.find(":");

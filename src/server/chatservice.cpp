@@ -104,6 +104,7 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
             user.setState("online");
             _userModel.updateState(user);
             CacheManager::instance()->cacheUser(user);
+            CacheManager::instance()->cacheUserStatus(user.getId(), "online");
 
             chat::LoginResponse response;
             response.mutable_base()->set_msgid(chat::LOGIN_MSG_ACK);
@@ -336,9 +337,9 @@ void ChatService::oneChat(const TcpConnectionPtr &conn, const string &data, Time
         }
     }
 
-    // 查询toid是否在线
-    User user = _userModel.query(toid);
-    if (user.getState() == "online")
+    // 查询toid是否在线 (使用Redis缓存，比MySQL主从复制更快)
+    string state = CacheManager::instance()->getUserStatus(toid);
+    if (state == "online")
     {
         // 用户在线但不在本服务器，通过Kafka广播消息
         // 由于每个服务器使用不同的groupId，所有服务器都会收到这条消息
@@ -517,17 +518,17 @@ void ChatService::handleKafkaMessage(const string& topic, const string& message)
             }
         }
     } else {
-        chat::BaseMessage baseMsg;
-        if (!baseMsg.ParseFromString(message)) {
-            LOG_ERROR << "Failed to parse Kafka protobuf message";
+        chat::OneChatMessage chatMsg;
+        if (!chatMsg.ParseFromString(message)) {
+            LOG_ERROR << "Failed to parse onechat message from Kafka";
             return;
         }
         
-        int targetUserId = baseMsg.toid();
+        int targetUserId = chatMsg.base().toid();
         lock_guard<mutex> lock(_connMutex);
         auto it = _userConnMap.find(targetUserId);
         if (it != _userConnMap.end()) {
-            sendMsg(it->second, baseMsg.msgid(), message);
+            sendMsg(it->second, chatMsg.base().msgid(), message);
         } else {
             // 用户在其他服务器断开连接但Redis中状态还未更新为offline的情况
             // 必须存储离线消息，否则消息会丢失

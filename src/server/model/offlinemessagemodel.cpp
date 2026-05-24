@@ -12,11 +12,11 @@ void OfflineMsgModel::insert(int userid, string msg)
     std::string escaped(msg.length() * 2 + 1, '\0');
     mysql_real_escape_string(mysql, &escaped[0], msg.c_str(), msg.length());
     
-    std::string sql = "insert into offlinemessage values(" 
+    std::string sql = "insert into offlinemessage(userid, message) values(" 
                     + std::to_string(userid) + ", '" + escaped.c_str() + "')";
     
     conn->update(sql);
-    }
+}
 
 void OfflineMsgModel::remove(int userid)
 {

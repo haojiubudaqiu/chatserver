@@ -8,7 +8,7 @@ FriendModel::FriendModel() {}
 bool FriendModel::insert(int userid, int friendid)
 {
     char sql[1024] = {0};
-    sprintf(sql, "insert ignore into friend values(%d, %d)", userid, friendid);
+    sprintf(sql, "insert ignore into friend(userid, friendid) values(%d, %d)", userid, friendid);
 
     ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (!conn) {

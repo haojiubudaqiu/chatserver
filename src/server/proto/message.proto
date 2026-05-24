@@ -53,7 +53,7 @@ message LoginResponse {
     int32 err_num = 2;
     string errmsg = 3;
     User user = 4;
-    repeated string offlinemsg = 5;
+    repeated bytes offlinemsg = 5;
     repeated User friends = 6;
     repeated GroupInfo groups = 7;
 }

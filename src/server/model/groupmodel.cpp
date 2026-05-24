@@ -47,7 +47,7 @@ void GroupModel::addGroup(int userid, int groupid, string role)
     mysql_real_escape_string(conn->getConnection(), role_escaped, role.c_str(), role.length());
 
     char sql[1024] = {0};
-    sprintf(sql, "insert into groupuser values(%d, %d, '%s')",
+    sprintf(sql, "insert into groupuser(groupid, userid, grouprole) values(%d, %d, '%s')",
             groupid, userid, role_escaped);
 
     conn->update(sql);
