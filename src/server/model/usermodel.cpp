@@ -41,17 +41,9 @@ bool UserModel::insert(User &user)
 // forceMaster: 强制读主库（用于注册后立即登录等场景）
 User UserModel::query(int id, bool forceMaster)
 {
-    // 1. 先从Redis缓存查询（高频访问数据）
-    User cachedUser = CacheManager::instance()->getUser(id);
-    if (cachedUser.getId() != 0) {
-        return cachedUser;
-    }
-    
-    // 2. 缓存未命中，从数据库查询
     char sql[1024] = {0};
     sprintf(sql, "select * from user where id = %d", id);
 
-    // 使用DatabaseRouter获取连接（读操作，默认从库）
     ConnectionGuard conn(DatabaseRouter::instance()->routeQuery(forceMaster));
     if (!conn) {
         return User();
@@ -69,9 +61,6 @@ User UserModel::query(int id, bool forceMaster)
             user.setPwd(row[2]);
             user.setState(row[3]);
             mysql_free_result(res);
-            
-            CacheManager::instance()->cacheUser(user);
-            
             return user;
         }
         mysql_free_result(res);

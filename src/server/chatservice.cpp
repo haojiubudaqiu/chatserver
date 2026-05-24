@@ -18,11 +18,21 @@ ChatService *ChatService::instance()
 
 ChatService::ChatService()
 {   
-    const char* redisSentinel1 = getenv("REDIS_SENTINEL1") ? getenv("REDIS_SENTINEL1") : "127.0.0.1:26379";
-    const char* redisSentinel2 = getenv("REDIS_SENTINEL2") ? getenv("REDIS_SENTINEL2") : "127.0.0.1:26380";
-    const char* redisSentinel3 = getenv("REDIS_SENTINEL3") ? getenv("REDIS_SENTINEL3") : "127.0.0.1:26381";
-    std::vector<std::string> sentinelAddrs = {redisSentinel1, redisSentinel2, redisSentinel3};
-    CacheManager::instance()->initWithSentinel(sentinelAddrs, "mymaster");
+    std::string redisSentinel1 = getenv("REDIS_SENTINEL1") ? getenv("REDIS_SENTINEL1") : "";
+    std::string redisSentinel2 = getenv("REDIS_SENTINEL2") ? getenv("REDIS_SENTINEL2") : "";
+    std::string redisSentinel3 = getenv("REDIS_SENTINEL3") ? getenv("REDIS_SENTINEL3") : "";
+    bool hasSentinel = !redisSentinel1.empty() && !redisSentinel2.empty() && !redisSentinel3.empty();
+    
+    if (hasSentinel) {
+        std::vector<std::string> sentinelAddrs = {redisSentinel1, redisSentinel2, redisSentinel3};
+        if (!CacheManager::instance()->initWithSentinel(sentinelAddrs, "mymaster")) {
+            LOG_WARN << "Sentinel init failed, falling back to direct Redis connection";
+            CacheManager::instance()->init();
+        }
+    } else {
+        LOG_INFO << "No sentinel configured, using direct Redis connection";
+        CacheManager::instance()->init();
+    }
     
     _kafkaManager = KafkaManager::instance();
     
@@ -94,6 +104,7 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
             // 登录成功，更新用户状态信息 state offline=>online
             user.setState("online");
             _userModel.updateState(user);
+            CacheManager::instance()->cacheUser(user);
 
             chat::LoginResponse response;
             response.mutable_base()->set_msgid(chat::LOGIN_MSG_ACK);
