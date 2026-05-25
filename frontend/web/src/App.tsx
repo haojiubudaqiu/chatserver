@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import './App.css'
 
-const BRIDGE = 'http://127.0.0.1:8000'
+const BRIDGE = import.meta.env.VITE_BRIDGE_URL || 'http://127.0.0.1:8000'
 
 interface User {
   id: number
@@ -75,7 +75,8 @@ function App() {
   }, [messages])
 
   const connectWs = useCallback((uid: number) => {
-    const ws = new WebSocket(`ws://127.0.0.1:8000/ws/${uid}`)
+    const wsUrl = (import.meta.env.VITE_BRIDGE_URL || 'http://127.0.0.1:8000').replace(/^http/, 'ws')
+    const ws = new WebSocket(`${wsUrl}/ws/${uid}`)
     ws.onmessage = (e) => {
       const data: ChatMessage = JSON.parse(e.data)
       if (data.type === 'chat' || data.type === 'groupchat') {
