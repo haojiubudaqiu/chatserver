@@ -36,23 +36,26 @@ bool GroupModel::createGroup(Group &group)
 }
 
 // 加入群组
-void GroupModel::addGroup(int userid, int groupid, string role)
+bool GroupModel::addGroup(int userid, int groupid, string role)
 {
     ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (!conn) {
-        return;
+        return false;
     }
 
     char role_escaped[256];
     mysql_real_escape_string(conn->getConnection(), role_escaped, role.c_str(), role.length());
 
     char sql[1024] = {0};
-    sprintf(sql, "insert into groupuser(groupid, userid, grouprole) values(%d, %d, '%s')",
+    sprintf(sql, "insert ignore into groupuser(groupid, userid, grouprole) values(%d, %d, '%s')",
             groupid, userid, role_escaped);
 
-    conn->update(sql);
-    // 清除群组缓存
-    CacheManager::instance()->invalidateGroup(groupid);
+    if (conn->update(sql)) {
+        // 清除群组缓存
+        CacheManager::instance()->invalidateGroup(groupid);
+        return true;
+    }
+    return false;
 }
 
 // 查询用户所在群组信息

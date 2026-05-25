@@ -191,6 +191,11 @@ bool CacheManager::invalidateUserStatus(int userId) {
     return _redisCache->deleteUserStatus(userId);
 }
 
+bool CacheManager::setNx(const std::string& key, const std::string& value, int ttlSeconds) {
+    if (!_redisCache) return false;
+    return _redisCache->setNx(key, value, ttlSeconds);
+}
+
 bool CacheManager::cacheOfflineMsgCount(int userId, int count) {
     if (!_redisCache) return false;
     return _redisCache->setOfflineMsgCount(userId, count);

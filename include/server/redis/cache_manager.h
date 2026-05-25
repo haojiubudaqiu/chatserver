@@ -61,6 +61,10 @@ public:
     std::string getUserStatus(int userId);
     bool invalidateUserStatus(int userId);
     
+    // 原子设置 NX（SET if Not eXists）带 TTL
+    // 用于跨服务器去重操作
+    bool setNx(const std::string& key, const std::string& value, int ttlSeconds = 30);
+
     // 离线消息计数缓存操作
     bool cacheOfflineMsgCount(int userId, int count);
     int getOfflineMsgCount(int userId);

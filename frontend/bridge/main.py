@@ -4,6 +4,7 @@ Connects React frontend to the C++ chat server.
 """
 
 import asyncio
+import base64
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -230,10 +231,27 @@ async def api_login(body: dict):
     session.on_message = _make_msg_callback(user_id, is_persistent=True)
 
     offlines = []
-    for raw in resp.offlinemsg:
-        inner = chat.OneChatMessage()
-        inner.ParseFromString(raw)
-        offlines.append({"fromid": inner.base.fromid, "time": inner.base.time, "message": inner.message})
+    for raw_b64 in resp.offlinemsg:
+        raw = base64.b64decode(raw_b64)
+        # Detect message type from protobuf's own msgid field
+        probe = chat.OneChatMessage()
+        probe.ParseFromString(raw)
+        msgtype = probe.base.msgid
+        if msgtype == chat.GROUP_CHAT_MSG:
+            inner = chat.GroupChatMessage()
+            inner.ParseFromString(raw)
+            offlines.append({
+                "type": "groupchat", "fromid": inner.base.fromid,
+                "groupid": inner.groupid, "time": inner.base.time,
+                "message": inner.message,
+            })
+        else:
+            # Default to OneChatMessage
+            offlines.append({
+                "type": "chat", "fromid": probe.base.fromid,
+                "toid": probe.base.toid, "time": probe.base.time,
+                "message": probe.message,
+            })
 
     friends = [{"id": f.id, "name": f.name, "state": f.state} for f in resp.friends]
 
@@ -296,7 +314,9 @@ async def api_send_message(body: dict):
     session = sessions.get(user_id)
     if not session:
         raise HTTPException(401, "Not logged in")
+    logger.info(f"SEND_MSG user={user_id} -> to={to_id}: {text[:50]}")
     await session.send(make_one_chat_message(user_id, to_id, text))
+    logger.info(f"SEND_MSG sent OK user={user_id} -> to={to_id}")
     return {"err_num": 0}
 
 

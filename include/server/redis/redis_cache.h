@@ -85,6 +85,10 @@ public:
     // 删除离线消息计数缓存 清理未读消息计数缓存。
     bool deleteOfflineMsgCount(int userId);
 
+    // 原子设置 NX（SET if Not eXists）带 TTL
+    // 用于分布式锁和去重
+    bool setNx(const std::string& key, const std::string& value, int ttlSeconds = 30);
+
     // 获取当前主库地址
     std::string getMasterAddr() const;
 

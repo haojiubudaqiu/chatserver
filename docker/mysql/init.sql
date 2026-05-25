@@ -44,11 +44,11 @@ CREATE TABLE IF NOT EXISTS groupuser (
     FOREIGN KEY (userid) REFERENCES user(id) ON DELETE CASCADE
 );
 
--- 离线消息表
+-- 离线消息表（message 使用 LONGBLOB 存储二进制 protobuf 数据）
 CREATE TABLE IF NOT EXISTS offlinemessage (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     userid INT NOT NULL,
-    message TEXT NOT NULL,
+    message LONGBLOB NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (userid) REFERENCES user(id) ON DELETE CASCADE
 );

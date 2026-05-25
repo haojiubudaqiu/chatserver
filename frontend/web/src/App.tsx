@@ -309,7 +309,7 @@ function App() {
                 <div key={i} className={`message ${m.fromid === user?.id ? 'self' : 'other'}`}>
                   <div className="message-sender">{m.name || friendName(m.fromid)}</div>
                   <div className="bubble">{m.message}</div>
-                  <div className="message-time">{new Date(m.time / 1e6 || m.time).toLocaleTimeString()}</div>
+                  <div className="message-time">{new Date(m.time > 1e12 ? m.time / 1e6 : m.time).toLocaleTimeString()}</div>
                 </div>
               ))}
               <div ref={msgEndRef} />

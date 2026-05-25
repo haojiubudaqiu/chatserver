@@ -500,6 +500,22 @@ int RedisCache::getOfflineMsgCount(int userId) {
     return count;
 }
 
+bool RedisCache::setNx(const std::string& key, const std::string& value, int ttlSeconds) {
+    redisContext* ctx = getContext();
+    if (ctx == nullptr) return false;
+
+    redisReply* reply = (redisReply*)redisCommand(ctx, "SET %s %s NX EX %d",
+        key.c_str(), value.c_str(), ttlSeconds);
+    if (reply == nullptr) {
+        return false;
+    }
+
+    bool result = (reply->type == REDIS_REPLY_STATUS &&
+                   strcmp(reply->str, "OK") == 0);
+    freeReplyObject(reply);
+    return result;
+}
+
 std::string RedisCache::getMasterAddr() const {
     if (sentinel_) {
         return sentinel_->getMasterHost() + ":" + std::to_string(sentinel_->getMasterPort());

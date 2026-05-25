@@ -116,11 +116,11 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
             response.mutable_user()->set_password(user.getPwd());
             response.mutable_user()->set_state(user.getState());
             
-            // 查询该用户是否有离线消息
+            // 查询该用户是否有离线消息（Base64 编码以兼容 protobuf 7.x bytes 校验）
             vector<string> vec = _offlineMsgModel.query(id);
             for (const string& msg : vec)
             {
-                response.add_offlinemsg(msg);
+                response.add_offlinemsg(base64Encode(msg));
             }
             // 读取该用户的离线消息后，把该用户的所有离线消息删除掉
             _offlineMsgModel.remove(id);
@@ -279,6 +279,10 @@ void ChatService::loginout(const TcpConnectionPtr &conn, const string &data, Tim
     // 更新用户的状态信息
     User user(userid, "", "", "offline");
     _userModel.updateState(user);
+
+    // 清除 Redis 缓存
+    CacheManager::instance()->invalidateUserStatus(userid);
+    CacheManager::instance()->invalidateUser(userid);
 }
 
 
@@ -305,6 +309,10 @@ void ChatService::clientCloseException(const TcpConnectionPtr &conn)
     {
         user.setState("offline");
         _userModel.updateState(user);
+
+        // 清除 Redis 缓存
+        CacheManager::instance()->invalidateUserStatus(user.getId());
+        CacheManager::instance()->invalidateUser(user.getId());
     }
 }
 
@@ -342,8 +350,6 @@ void ChatService::oneChat(const TcpConnectionPtr &conn, const string &data, Time
     if (state == "online")
     {
         // 用户在线但不在本服务器，通过Kafka广播消息
-        // 由于每个服务器使用不同的groupId，所有服务器都会收到这条消息
-        // 收到消息的服务器会在自己的_userConnMap中查找目标用户
         if (_kafkaManager) {
             _kafkaManager->sendMessage("user_messages", serializedMsg);
         }
@@ -435,13 +441,13 @@ void ChatService::addGroup(const TcpConnectionPtr &conn, const string &data, Tim
 
     int userid = addGroupReq.base().fromid();
     int groupid = addGroupReq.groupid();
-    _groupModel.addGroup(userid, groupid, "normal");
+    bool success = _groupModel.addGroup(userid, groupid, "normal");
     
     chat::AddGroupResponse response;
     response.mutable_base()->set_msgid(chat::ADD_GROUP_MSG_ACK);
     response.mutable_base()->set_time(time.microSecondsSinceEpoch());
-    response.set_err_num(0);
-    response.set_errmsg("");
+    response.set_err_num(success ? 0 : 1);
+    response.set_errmsg(success ? "" : "Failed to join group");
     sendProtoMsg(conn, response);
 }
 
@@ -482,8 +488,13 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
 
     for (int id : nonLocalUsers)
     {
-        User user = _userModel.query(id);
-        if (user.getState() != "online")
+        // 优先查 Redis 缓存（比 MySQL 快），减少主从延迟问题
+        string state = CacheManager::instance()->getUserStatus(id);
+        if (state.empty()) {
+            User user = _userModel.query(id);
+            state = user.getState();
+        }
+        if (state != "online")
         {
             _offlineMsgModel.insert(id, serializedMsg);
         }
@@ -508,13 +519,24 @@ void ChatService::handleKafkaMessage(const string& topic, const string& message)
         
         int groupid = groupMsg.groupid();
         int fromid = groupMsg.base().fromid();
+        int64_t msgTime = groupMsg.base().time();
         vector<int> useridVec = _groupModel.queryGroupUsers(fromid, groupid);
         
-        lock_guard<mutex> lock(_connMutex);
-        for (int id : useridVec) {
-            auto it = _userConnMap.find(id);
-            if (it != _userConnMap.end()) {
-                sendMsg(it->second, groupMsg.base().msgid(), message);
+        {
+            lock_guard<mutex> lock(_connMutex);
+            for (int id : useridVec) {
+                auto it = _userConnMap.find(id);
+                if (it != _userConnMap.end()) {
+                    sendMsg(it->second, groupMsg.base().msgid(), message);
+                } else {
+                    // 用户可能刚断开连接，使用 SETNX 去重存储离线消息
+                    string dedupKey = "group_offline:" + to_string(id) + ":"
+                                    + to_string(groupid) + ":" + to_string(fromid)
+                                    + ":" + to_string(msgTime);
+                    if (CacheManager::instance()->setNx(dedupKey, "1", 30)) {
+                        _offlineMsgModel.insert(id, message);
+                    }
+                }
             }
         }
     } else {
@@ -525,14 +547,24 @@ void ChatService::handleKafkaMessage(const string& topic, const string& message)
         }
         
         int targetUserId = chatMsg.base().toid();
-        lock_guard<mutex> lock(_connMutex);
-        auto it = _userConnMap.find(targetUserId);
-        if (it != _userConnMap.end()) {
-            sendMsg(it->second, chatMsg.base().msgid(), message);
-        } else {
-            // 用户在其他服务器断开连接但Redis中状态还未更新为offline的情况
-            // 必须存储离线消息，否则消息会丢失
-            _offlineMsgModel.insert(targetUserId, message);
+        int fromid = chatMsg.base().fromid();
+        int64_t msgTime = chatMsg.base().time();
+        
+        {
+            lock_guard<mutex> lock(_connMutex);
+            auto it = _userConnMap.find(targetUserId);
+            if (it != _userConnMap.end()) {
+                sendMsg(it->second, chatMsg.base().msgid(), message);
+            } else {
+                // 用户在其他服务器断开连接但Redis中状态还未更新为offline的情况
+                // 必须存储离线消息，否则消息会丢失
+                // 使用 SETNX 去重，防止多台服务器重复存储
+                string dedupKey = "offline:" + to_string(fromid) + ":"
+                                + to_string(targetUserId) + ":" + to_string(msgTime);
+                if (CacheManager::instance()->setNx(dedupKey, "1", 30)) {
+                    _offlineMsgModel.insert(targetUserId, message);
+                }
+            }
         }
     }
 }

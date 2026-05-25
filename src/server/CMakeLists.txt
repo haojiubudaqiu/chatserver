@@ -59,6 +59,8 @@ if(RDKAFKA_LIBRARY AND RDKAFKA++_LIBRARY AND RDKAFKA_INCLUDE_DIR)
         ${RDKAFKA++_LIBRARY}   # Kafka C++客户端库
         pthread        # 线程库
         ${PROTOBUF_LIBRARIES}  # Protobuf库
+        ssl            # OpenSSL SSL
+        crypto         # OpenSSL Crypto
     )
     target_include_directories(ChatServer PRIVATE ${RDKAFKA_INCLUDE_DIR})
     add_compile_definitions(HAS_LIBRDKAFKA)
@@ -71,6 +73,8 @@ else()
         hiredis        # Redis客户端库
         pthread        # 线程库
         ${PROTOBUF_LIBRARIES}  # Protobuf库
+        ssl            # OpenSSL SSL（用于 Base64 编解码）
+        crypto         # OpenSSL Crypto
     )
 endif()
 

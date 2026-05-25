@@ -142,8 +142,5 @@ void UserModel::resetState()
     ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (conn) {
         conn->update(sql);
-        }
-    
-    // 清除所有用户相关的缓存
-    // 注意：在实际应用中，可能需要更精细的缓存清理策略
+    }
 }
