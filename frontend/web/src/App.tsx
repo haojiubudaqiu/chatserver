@@ -63,6 +63,7 @@ function App() {
   const wsRef = useRef<WebSocket | null>(null)
   const msgEndRef = useRef<HTMLDivElement>(null)
   const notifTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const wsReconnectRef = useRef(true)
 
   const showNotif = useCallback((msg: string) => {
     setNotif(msg)
@@ -75,15 +76,24 @@ function App() {
   }, [messages])
 
   const connectWs = useCallback((uid: number) => {
+    wsReconnectRef.current = true
     const wsUrl = (import.meta.env.VITE_BRIDGE_URL || 'http://127.0.0.1:8000').replace(/^http/, 'ws')
     const ws = new WebSocket(`${wsUrl}/ws/${uid}`)
     ws.onmessage = (e) => {
-      const data: ChatMessage = JSON.parse(e.data)
+      const data = JSON.parse(e.data)
+      if (data.type === 'error') {
+        wsReconnectRef.current = false
+        setError(data.message || 'Session expired')
+        setPage('login')
+        return
+      }
       if (data.type === 'chat' || data.type === 'groupchat') {
         setMessages(prev => [...prev, { ...data, name: `User#${data.fromid}` }])
       }
     }
-    ws.onclose = () => setTimeout(() => connectWs(uid), 2000)
+    ws.onclose = () => {
+      if (wsReconnectRef.current) setTimeout(() => connectWs(uid), 2000)
+    }
     wsRef.current = ws
   }, [])
 
@@ -130,6 +140,7 @@ function App() {
 
   const handleLogout = async () => {
     if (user) {
+      wsReconnectRef.current = false
       wsRef.current?.close()
       await api('/api/logout', { id: user.id }).catch(() => {})
       setUser(null)

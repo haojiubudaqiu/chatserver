@@ -60,20 +60,27 @@ app.add_middleware(
 )
 
 
-def _make_msg_callback(session_key: int):
+def _make_msg_callback(session_key: int, is_persistent: bool = False):
     """Create callback for a session identified by session_key."""
     async def cb(msgid: int, data: bytes):
         if msgid == -1:
             logger.info(f"Session {session_key} disconnected")
+            if is_persistent and isinstance(session_key, int):
+                await _cleanup_session(session_key)
             return
+        logger.debug(f"Callback: session={session_key} msgid={msgid} data_len={len(data)}")
         if session_key in pending:
             fut = pending[session_key].pop(msgid, None)
             if fut and not fut.done():
+                logger.info(f"Resolved pending future for session={session_key} msgid={msgid}")
                 fut.set_result(data)
                 return
         # Not a response to a request - dispatch to WS push
         if isinstance(session_key, int) and session_key in sessions:
+            logger.info(f"Dispatching push: session={session_key} msgid={msgid}")
             await _dispatch_push(session_key, msgid, data)
+        else:
+            logger.warning(f"No handler for session={session_key} msgid={msgid}")
     return cb
 
 
@@ -84,6 +91,7 @@ async def _dispatch_push(user_id: int, msgid: int, data: bytes):
         msg = chat.OneChatMessage()
         msg.ParseFromString(data)
         payload = json.dumps({"type": "chat", "fromid": msg.base.fromid, "time": msg.base.time, "message": msg.message})
+        logger.info(f"Push ONE_CHAT_MSG to user={user_id} from={msg.base.fromid}: {msg.message[:50]}")
     elif msgid == chat.GROUP_CHAT_MSG:
         msg = chat.GroupChatMessage()
         msg.ParseFromString(data)
@@ -91,19 +99,25 @@ async def _dispatch_push(user_id: int, msgid: int, data: bytes):
             "type": "groupchat", "fromid": msg.base.fromid,
             "groupid": msg.groupid, "time": msg.base.time, "message": msg.message,
         })
+        logger.info(f"Push GROUP_CHAT_MSG to user={user_id} from={msg.base.fromid}")
 
     if payload and user_id in ws_connections:
+        logger.info(f"WS connections for user={user_id}: {len(ws_connections[user_id])}")
         dead = []
         for ws in ws_connections[user_id]:
             try:
                 await ws.send_text(payload)
-            except Exception:
+                logger.info(f"WS sent to user={user_id}")
+            except Exception as e:
+                logger.error(f"WS send error for user={user_id}: {e}")
                 dead.append(ws)
         for ws in dead:
             try:
                 ws_connections[user_id].remove(ws)
             except ValueError:
                 pass
+    else:
+        logger.warning(f"No WS connections for user={user_id}, payload={payload is not None}")
 
 
 async def create_session(user_id: Optional[int] = None) -> Session:
@@ -142,7 +156,13 @@ async def _cleanup_session(user_id: int):
     session = sessions.pop(user_id, None)
     if session:
         await session.close()
-    ws_connections.pop(user_id, None)
+    wss = ws_connections.pop(user_id, None)
+    if wss:
+        for ws in wss:
+            try:
+                await ws.close()
+            except Exception:
+                pass
     pending.pop(user_id, None)
 
 
@@ -204,7 +224,7 @@ async def api_login(body: dict):
     # Transfer to persistent session
     sessions[user_id] = session
     session.user_id = user_id
-    session.on_message = _make_msg_callback(user_id)
+    session.on_message = _make_msg_callback(user_id, is_persistent=True)
 
     offlines = []
     for raw in resp.offlinemsg:
