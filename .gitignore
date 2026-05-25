@@ -37,3 +37,9 @@ c++_mcp/build/
 c++_mcp/examples/*.png*.pyc
 __pycache__/
 message_pb2.py
+
+# Frontend
+frontend/web/node_modules/
+frontend/web/dist/
+frontend/bridge/__pycache__/
+frontend/bridge/proto/__pycache__/
