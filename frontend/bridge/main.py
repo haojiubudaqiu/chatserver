@@ -90,7 +90,10 @@ async def _dispatch_push(user_id: int, msgid: int, data: bytes):
     if msgid == chat.ONE_CHAT_MSG:
         msg = chat.OneChatMessage()
         msg.ParseFromString(data)
-        payload = json.dumps({"type": "chat", "fromid": msg.base.fromid, "time": msg.base.time, "message": msg.message})
+        payload = json.dumps({
+            "type": "chat", "fromid": msg.base.fromid, "toid": msg.base.toid,
+            "time": msg.base.time, "message": msg.message,
+        })
         logger.info(f"Push ONE_CHAT_MSG to user={user_id} from={msg.base.fromid}: {msg.message[:50]}")
     elif msgid == chat.GROUP_CHAT_MSG:
         msg = chat.GroupChatMessage()
