@@ -73,33 +73,41 @@ bool KafkaConsumer::init() {
 }
 
 
-// 订阅主题
-bool KafkaConsumer::subscribe(const std::string& topic) {
+// 订阅主题列表 (替换之前的所有订阅)
+bool KafkaConsumer::subscribe(const std::vector<std::string>& topics) {
 #ifndef HAS_LIBRDKAFKA
-    LOG_WARN << "librdkafka not available, cannot subscribe to Kafka topic";
-    (void)topic;
+    LOG_WARN << "librdkafka not available, cannot subscribe to Kafka topics";
     return false;
 #else
-    rd_kafka_topic_partition_list_t *topics = rd_kafka_topic_partition_list_new(1);
-    rd_kafka_topic_partition_list_add(topics, topic.c_str(), RD_KAFKA_PARTITION_UA);
-    rd_kafka_resp_err_t err = rd_kafka_subscribe(static_cast<rd_kafka_t*>(consumer_), topics);
-    rd_kafka_topic_partition_list_destroy(topics);
+    rd_kafka_topic_partition_list_t *subscription = rd_kafka_topic_partition_list_new(topics.size());
+    for (const auto& t : topics) {
+        rd_kafka_topic_partition_list_add(subscription, t.c_str(), RD_KAFKA_PARTITION_UA);
+    }
+    rd_kafka_resp_err_t err = rd_kafka_subscribe(static_cast<rd_kafka_t*>(consumer_), subscription);
+    rd_kafka_topic_partition_list_destroy(subscription);
     
     if (err) {
-        LOG_ERROR << "Failed to subscribe to topic " << topic << ": " << rd_kafka_err2str(err);
+        LOG_ERROR << "Failed to subscribe to topics: " << rd_kafka_err2str(err);
         return false;
     }
     
-    // poll_set_consumer must be called AFTER subscribe
     err = rd_kafka_poll_set_consumer(static_cast<rd_kafka_t*>(consumer_));
     if (err) {
         LOG_ERROR << "Failed to set consumer: " << rd_kafka_err2str(err);
         return false;
     }
     
-    LOG_INFO << "Subscribed to Kafka topic: " << topic;
+    for (const auto& t : topics) {
+        LOG_INFO << "Subscribed to Kafka topic: " << t;
+    }
     return true;
 #endif
+}
+
+// 订阅单个主题 (兼容)
+bool KafkaConsumer::subscribe(const std::string& topic) {
+    std::vector<std::string> topics = {topic};
+    return subscribe(topics);
 }
 
 // 取消订阅主题
@@ -155,7 +163,6 @@ void KafkaConsumer::startConsume() {
         if (rkmessage) {// 如果有消息
             if (rkmessage->err) {// 如果消息有错误
                 if (rkmessage->err == RD_KAFKA_RESP_ERR__PARTITION_EOF) {
-                    // Reached end of partition
                     LOG_INFO << "Reached end of partition";
                 } else if (rkmessage->err == RD_KAFKA_RESP_ERR__TIMED_OUT) {
                     // Poll timeout - normal, no messages
@@ -164,21 +171,20 @@ void KafkaConsumer::startConsume() {
                 }
             } else {
                 // Process the message 处理正常消息
-                // 从消息负载创建字符串（注意：payload可能为NULL，len可能为0）
                 if (rkmessage->payload == nullptr || rkmessage->len == 0) {
                     LOG_WARN << "Received Kafka message with empty payload";
                     rd_kafka_message_destroy(rkmessage);
                     continue;
                 }
                 std::string message(static_cast<char*>(rkmessage->payload), rkmessage->len);
-                // 获取主题名称（如果可用）
                 std::string topic(rkmessage->rkt ? rd_kafka_topic_name(rkmessage->rkt) : "unknown");
-                // 如果有设置回调函数，则调用
+                LOG_INFO << "Kafka consumer received message on topic '" << topic << "' len=" << rkmessage->len;
                 if (messageCallback_) {
                     messageCallback_(topic, message);
+                } else {
+                    LOG_ERROR << "No message callback set!";
                 }
             }
-            // 销毁消息对象
             rd_kafka_message_destroy(rkmessage);
         }
     }

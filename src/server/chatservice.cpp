@@ -3,6 +3,7 @@
 #include "public.hpp"
 #include "message.pb.h"
 #include "cache_manager.h"
+#include "peer_relay.h"
 #include <muduo/base/Logging.h>
 #include <vector>
 #include <cstdlib>
@@ -48,6 +49,34 @@ ChatService::ChatService()
     
     std::vector<std::string> topics = {"user_messages", "group_messages"};
     _kafkaManager->initConsumers(topics);
+    
+    // Initialize PeerRelay for cross-server TCP relay
+    char* relayPortStr = getenv("RELAY_PORT");
+    char* relayPeersStr = getenv("RELAY_PEERS");
+    if (relayPortStr && relayPeersStr) {
+        uint16_t relayPort = static_cast<uint16_t>(atoi(relayPortStr));
+        std::vector<std::string> peerAddrs;
+        std::string peers(relayPeersStr);
+        size_t pos = 0;
+        while ((pos = peers.find(',')) != std::string::npos) {
+            peerAddrs.push_back(peers.substr(0, pos));
+            peers.erase(0, pos + 1);
+        }
+        if (!peers.empty()) peerAddrs.push_back(peers);
+        
+        if (PeerRelay::instance()->init(relayPort, peerAddrs)) {
+            PeerRelay::instance()->setMessageCallback([this](const std::string& data) {
+                if (data.size() < 1) return;
+                uint8_t type = static_cast<uint8_t>(data[0]);
+                std::string protoData = data.substr(1);
+                std::string topic = (type == 0x02) ? "group_messages" : "user_messages";
+                handleKafkaMessage(topic, protoData);
+            });
+            LOG_INFO << "PeerRelay initialized on port " << relayPort;
+        }
+    } else {
+        LOG_INFO << "RELAY_PORT/RELAY_PEERS not set, peer relay disabled";
+    }
 }
 
 //对类的方法进行实现
@@ -276,13 +305,14 @@ void ChatService::loginout(const TcpConnectionPtr &conn, const string &data, Tim
         }
     }
 
-    // 更新用户的状态信息
-    User user(userid, "", "", "offline");
-    _userModel.updateState(user);
-
-    // 清除 Redis 缓存
-    CacheManager::instance()->invalidateUserStatus(userid);
+    // 更新用户的状态
+    CacheManager::instance()->cacheUserStatus(userid, "offline");
     CacheManager::instance()->invalidateUser(userid);
+    // Also update MySQL state
+    User user;
+    user.setId(userid);
+    user.setState("offline");
+    _userModel.updateState(user);
 }
 
 
@@ -304,15 +334,14 @@ void ChatService::clientCloseException(const TcpConnectionPtr &conn)
         }
     }
 
-    // 更新用户的状态信息
-    if (user.getId() != -1)
+    // 更新用户状态为离线
+    if (user.getId() != 0)
     {
+        CacheManager::instance()->cacheUserStatus(user.getId(), "offline");
+        CacheManager::instance()->invalidateUser(user.getId());
+        // Also update MySQL state so that re-login on another connection works
         user.setState("offline");
         _userModel.updateState(user);
-
-        // 清除 Redis 缓存
-        CacheManager::instance()->invalidateUserStatus(user.getId());
-        CacheManager::instance()->invalidateUser(user.getId());
     }
 }
 
@@ -339,24 +368,25 @@ void ChatService::oneChat(const TcpConnectionPtr &conn, const string &data, Time
         auto it = _userConnMap.find(toid);
         if (it != _userConnMap.end())
         {
-            // toid在线且在本服务器，转发消息
             sendMsg(it->second, chatMsg.base().msgid(), serializedMsg);
             return;
         }
     }
 
-    // 查询toid是否在线 (使用Redis缓存，比MySQL主从复制更快)
-    string state = CacheManager::instance()->getUserStatus(toid);
-    if (state == "online")
+    // 用户不在本服务器：通过PeerRelay TCP中继 + Kafka + 存储离线消息
+    // TCP中继用于跨服实时投递，离线消息作为收件箱保证不丢
     {
-        // 用户在线但不在本服务器，通过Kafka广播消息
-        if (_kafkaManager) {
-            _kafkaManager->sendMessage("user_messages", serializedMsg);
+        // Send via peer relay (TCP direct)
+        string relayMsg;
+        relayMsg.push_back(static_cast<char>(0x01)); // topic type: user_messages
+        relayMsg += serializedMsg;
+        if (!PeerRelay::instance()->sendMessage(relayMsg)) {
+            // Fallback to Kafka if TCP relay fails
+            if (_kafkaManager) {
+                _kafkaManager->sendMessage("user_messages", serializedMsg);
+            }
         }
-        return;
     }
-
-    // toid不在线，存储离线消息
     _offlineMsgModel.insert(toid, serializedMsg);
 }
 
@@ -468,7 +498,6 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
     string serializedMsg = groupChatMsg.SerializeAsString();
 
     vector<int> useridVec = _groupModel.queryGroupUsers(fromid, groupid);
-    vector<int> nonLocalUsers;
     
     {
         lock_guard<mutex> lock(_connMutex);
@@ -481,27 +510,22 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
             }
             else
             {
-                nonLocalUsers.push_back(id);
+                _offlineMsgModel.insert(id, serializedMsg);
             }
         }
     }
 
-    for (int id : nonLocalUsers)
+    // Broadcast via PeerRelay TCP relay for cross-server delivery
     {
-        // 优先查 Redis 缓存（比 MySQL 快），减少主从延迟问题
-        string state = CacheManager::instance()->getUserStatus(id);
-        if (state.empty()) {
-            User user = _userModel.query(id);
-            state = user.getState();
+        string relayMsg;
+        relayMsg.push_back(static_cast<char>(0x02)); // topic type: group_messages
+        relayMsg += serializedMsg;
+        if (!PeerRelay::instance()->sendMessage(relayMsg)) {
+            // Fallback to Kafka if TCP relay fails
+            if (_kafkaManager) {
+                _kafkaManager->sendMessage("group_messages", serializedMsg);
+            }
         }
-        if (state != "online")
-        {
-            _offlineMsgModel.insert(id, serializedMsg);
-        }
-    }
-
-    if (_kafkaManager) {
-        _kafkaManager->sendMessage("group_messages", serializedMsg);
     }
 }
 
@@ -509,7 +533,6 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
 // 用于跨服务器消息传递：当一台服务器收到发给非本地用户的消息时，
 // 通过 Kafka 广播到所有服务器，各服务器在本地 _userConnMap 中查找并转发
 void ChatService::handleKafkaMessage(const string& topic, const string& message) {
-    
     if (topic == "group_messages") {
         chat::GroupChatMessage groupMsg;
         if (!groupMsg.ParseFromString(message)) {
@@ -604,12 +627,21 @@ bool ChatService::sendMessageByMcp(int fromId, int toId, const string& messageCo
         }
     }
 
-    User user = _userModel.query(toId);
-    if (user.getState() == "online") {
-        if (_kafkaManager) {
-            _kafkaManager->sendMessage("user_messages", serializedMsg);
-            LOG_INFO << "[MCP] Published message from user " << fromId << " to user " << toId << " via Kafka";
+    // Try TCP relay first
+    {
+        string relayMsg;
+        relayMsg.push_back(static_cast<char>(0x01));
+        relayMsg += serializedMsg;
+        if (PeerRelay::instance()->sendMessage(relayMsg)) {
+            LOG_INFO << "[MCP] Sent message from user " << fromId << " to user " << toId << " via PeerRelay";
+            return true;
         }
+    }
+
+    // Fallback to Kafka
+    if (_kafkaManager) {
+        _kafkaManager->sendMessage("user_messages", serializedMsg);
+        LOG_INFO << "[MCP] Published message from user " << fromId << " to user " << toId << " via Kafka";
         return true;
     }
 

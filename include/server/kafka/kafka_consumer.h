@@ -18,7 +18,10 @@ public:
     // 初始化Kafka消费者
     bool init();
     
-    // 订阅主题
+    // 订阅主题列表
+    bool subscribe(const std::vector<std::string>& topics);
+    
+    // 订阅单个主题（兼容旧代码）
     bool subscribe(const std::string& topic);
     
     // 取消订阅主题

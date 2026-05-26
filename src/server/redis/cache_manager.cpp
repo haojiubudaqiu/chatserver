@@ -167,20 +167,29 @@ bool CacheManager::cacheUserStatus(int userId, const std::string& status) {
 }
 
 std::string CacheManager::getUserStatus(int userId) {
-    if (!_redisCache) return "";
+    if (!_redisCache) {
+        LOG_ERROR << "getUserStatus: _redisCache is null for user " << userId;
+        return "";
+    }
     
     // 先从缓存获取
     std::string status = _redisCache->getUserStatus(userId);
     if (!status.empty()) {
+        LOG_INFO << "getUserStatus: cache hit for user " << userId << " = '" << status << "'";
         return status;
     }
     
     // 缓存未命中，从数据库获取用户状态
+    LOG_INFO << "getUserStatus: cache miss for user " << userId << ", querying DB";
     User user = _userModel->query(userId);
     if (user.getId() != 0) {
         status = user.getState();
+        LOG_INFO << "getUserStatus: DB returned state='" << status << "' for user " << userId;
         // 将数据存入缓存
         _redisCache->setUserStatus(userId, status);
+        LOG_INFO << "getUserStatus: cached DB state='" << status << "' for user " << userId;
+    } else {
+        LOG_INFO << "getUserStatus: user " << userId << " not found in DB";
     }
     
     return status;
