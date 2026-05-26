@@ -279,7 +279,7 @@ function App() {
           <div className="add-friend-row">
             <input className="small-input" placeholder="Group name" value={createGroupName} onChange={e => setCreateGroupName(e.target.value)} />
             <input className="small-input" placeholder="Desc" value={createGroupDesc} onChange={e => setCreateGroupDesc(e.target.value)} />
-            <button className="small-btn" onClick={handleCreateGroup}>+</button>
+            <button className="small-btn" onClick={handleCreateGroup}>Create</button>
           </div>
           <div className="add-friend-row">
             <input className="small-input" placeholder="Join group ID" value={joinGroupId} onChange={e => setJoinGroupId(e.target.value)} />
