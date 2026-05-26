@@ -1,5 +1,4 @@
 #include "redis_cache.h"
-#include <iostream>
 #include <sstream>
 #include <cstdarg>
 #include <cstdlib>
@@ -103,6 +102,7 @@ redisReply* RedisCache::executeCommand(const char* format, ...) {
 }
 
 bool RedisCache::setUser(const User& user) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return false;
     
@@ -132,6 +132,7 @@ bool RedisCache::setUser(const User& user) {
 }
 
 User RedisCache::getUser(int userId) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return User();
     
@@ -167,6 +168,7 @@ User RedisCache::getUser(int userId) {
 
 
 bool RedisCache::deleteUser(int userId) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return false;
     
@@ -184,6 +186,7 @@ bool RedisCache::deleteUser(int userId) {
 
 //写入好友列表
 bool RedisCache::setFriends(int userId, const std::vector<User>& friends) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return false;
     
@@ -214,6 +217,7 @@ bool RedisCache::setFriends(int userId, const std::vector<User>& friends) {
 }
 
 std::vector<User> RedisCache::getFriends(int userId) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return std::vector<User>();
     
@@ -249,6 +253,7 @@ std::vector<User> RedisCache::getFriends(int userId) {
 }
 
 bool RedisCache::deleteFriends(int userId) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return false;
     
@@ -265,6 +270,7 @@ bool RedisCache::deleteFriends(int userId) {
 }
 
 bool RedisCache::setGroup(const Group& group) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return false;
     
@@ -318,6 +324,7 @@ bool RedisCache::setGroup(const Group& group) {
 }
 
 Group RedisCache::getGroup(int groupId) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return Group();
     
@@ -379,6 +386,7 @@ Group RedisCache::getGroup(int groupId) {
 }
 
 bool RedisCache::deleteGroup(int groupId) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return false;
     
@@ -399,6 +407,7 @@ bool RedisCache::deleteGroup(int groupId) {
 }
 
 bool RedisCache::setUserStatus(int userId, const std::string& status) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return false;
     
@@ -421,6 +430,7 @@ bool RedisCache::setUserStatus(int userId, const std::string& status) {
 }
 
 std::string RedisCache::getUserStatus(int userId) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) {
         LOG_ERROR << "getUserStatus: getContext returned null for user " << userId;
@@ -441,6 +451,7 @@ std::string RedisCache::getUserStatus(int userId) {
 }
 
 bool RedisCache::deleteUserStatus(int userId) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return false;
     
@@ -457,6 +468,7 @@ bool RedisCache::deleteUserStatus(int userId) {
 }
 
 bool RedisCache::setOfflineMsgCount(int userId, int count) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return false;
     
@@ -479,6 +491,7 @@ bool RedisCache::setOfflineMsgCount(int userId, int count) {
 }
 
 int RedisCache::getOfflineMsgCount(int userId) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return 0;
     
@@ -504,6 +517,7 @@ int RedisCache::getOfflineMsgCount(int userId) {
 }
 
 bool RedisCache::setNx(const std::string& key, const std::string& value, int ttlSeconds) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return false;
 
@@ -527,6 +541,7 @@ std::string RedisCache::getMasterAddr() const {
 }
 
 bool RedisCache::deleteOfflineMsgCount(int userId) {
+    std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
     if (ctx == nullptr) return false;
     

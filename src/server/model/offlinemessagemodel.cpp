@@ -3,10 +3,10 @@
 #include "database_router.h"
 #include <cstring>
 
-void OfflineMsgModel::insert(int userid, string msg)
+bool OfflineMsgModel::insert(int userid, string msg)
 {
     ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
-    if (!conn || !conn->getConnection()) return;
+    if (!conn || !conn->getConnection()) return false;
 
     MYSQL* mysql = conn->getConnection();
     std::string escaped(msg.length() * 2 + 1, '\0');
@@ -15,18 +15,19 @@ void OfflineMsgModel::insert(int userid, string msg)
     std::string sql = "insert into offlinemessage(userid, message) values(" 
                     + std::to_string(userid) + ", '" + escaped.c_str() + "')";
     
-    conn->update(sql);
+    return conn->update(sql);
 }
 
-void OfflineMsgModel::remove(int userid)
+bool OfflineMsgModel::remove(int userid)
 {
     char sql[1024] = {0};
     sprintf(sql, "delete from offlinemessage where userid=%d", userid);
 
     ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
-    if (conn) {
-        conn->update(sql);
-        }
+    if (!conn) {
+        return false;
+    }
+    return conn->update(sql);
 }
 
 vector<string> OfflineMsgModel::query(int userid)

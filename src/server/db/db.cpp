@@ -3,6 +3,7 @@
 #include "database_router.h"
 #include <muduo/base/Logging.h>
 #include <cstdlib>
+#include <atomic>
 
 static string master_server = "127.0.0.1";
 static int master_port = 3306;
@@ -132,7 +133,7 @@ bool MySQL::connect()
     
     if (_role == SLAVE) {
         // 实现一个简单的轮询 (round-robin) 算法来选择从库，以实现负载均衡。
-        static int slave_index = 0; // 静态变量，记录上次选择的从库索引
+        static std::atomic<int> slave_index{0};
         vector<string> slaves;
 
 

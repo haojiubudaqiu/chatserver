@@ -16,9 +16,8 @@ target_include_directories(ChatClient PRIVATE
 )
 
 # 指定可执行文件链接时需要依赖的库文件
-target_link_libraries(ChatClient 
-    muduo_net 
-    muduo_base 
+target_link_libraries(ChatClient
     pthread
-    ${PROTOBUF_LIBRARIES}
+    crypto
+    protobuf
 )

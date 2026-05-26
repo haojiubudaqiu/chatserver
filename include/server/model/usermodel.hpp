@@ -4,7 +4,6 @@
 #include "user.hpp"
 
 // 前向声明
-class CacheManager;
 
 // User表的数据操作类
 class UserModel {
@@ -29,7 +28,6 @@ public:
     void resetState();
 
 private:
-    CacheManager* _cacheManager;
 };
 
 #endif

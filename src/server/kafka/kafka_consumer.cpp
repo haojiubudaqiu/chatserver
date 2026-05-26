@@ -1,5 +1,4 @@
 #include "kafka_consumer.h"
-#include <iostream>
 #include <muduo/base/Logging.h>
 
 #ifdef HAS_LIBRDKAFKA

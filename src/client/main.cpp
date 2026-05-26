@@ -18,6 +18,7 @@ using namespace std;
 #include <cerrno>
 #include <cstring>
 #include "group.hpp"
+#include "chat_util.h"
 #include "user.hpp"
 #include "public.hpp"
 
@@ -251,15 +252,19 @@ void doLoginResponse(const string& responseData)
         {
             const string& msgStr = response.offlinemsg(i);
             
+            // Note: Server base64 encodes the offline messages to bypass protobuf 7.x UTF-8 validation
+            // We need to base64 decode it first.
+            string decodedMsg = base64Decode(msgStr);
+            
             chat::OneChatMessage oneChatMsg;
-            if (oneChatMsg.ParseFromString(msgStr)) {
+            if (oneChatMsg.ParseFromString(decodedMsg)) {
                 cout << oneChatMsg.base().time() << " [" << oneChatMsg.base().fromid() << "]" 
                      << " said: " << oneChatMsg.message() << endl;
                 continue;
             }
             
             chat::GroupChatMessage groupChatMsg;
-            if (groupChatMsg.ParseFromString(msgStr)) {
+            if (groupChatMsg.ParseFromString(decodedMsg)) {
                 cout << "群消息[" << groupChatMsg.groupid() << "]:" << groupChatMsg.base().time() 
                      << " [" << groupChatMsg.base().fromid() << "]" 
                      << " said: " << groupChatMsg.message() << endl;

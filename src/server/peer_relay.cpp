@@ -3,7 +3,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <poll.h>
 #include <cerrno>
 #include <cstring>

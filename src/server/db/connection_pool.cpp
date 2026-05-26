@@ -1,7 +1,6 @@
 #include "connection_pool.h"
 #include <iostream>
 #include <muduo/base/Logging.h>
-#include <mysql/mysql.h>
 #include <sstream>
 #include <thread>
 

@@ -1,5 +1,4 @@
 #include "kafka_producer.h"
-#include <iostream>
 #include <muduo/base/Logging.h>
 
 // 条件编译：如果定义了HAS_LIBRDKAFKA宏，则包含librdkafka头文件

@@ -1,6 +1,5 @@
 #include "chat_util.h"
 #include "chatservice.hpp"
-#include "public.hpp"
 #include "message.pb.h"
 #include "cache_manager.h"
 #include "peer_relay.h"
@@ -37,7 +36,8 @@ ChatService::ChatService()
     _kafkaManager = KafkaManager::instance();
     
     const char* kafkaHost = getenv("KAFKA_HOST") ? getenv("KAFKA_HOST") : "localhost";
-    std::string kafkaBroker = std::string(kafkaHost) + ":9092";
+    const char* kafkaPort = getenv("KAFKA_PORT") ? getenv("KAFKA_PORT") : "9092";
+    std::string kafkaBroker = std::string(kafkaHost) + ":" + kafkaPort;
     
     char* serverPort = getenv("SERVER_PORT");
     std::string groupId = serverPort ? 
@@ -131,7 +131,9 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
 
             // 登录成功，更新用户状态信息 state offline=>online
             user.setState("online");
-            _userModel.updateState(user);
+            if (!_userModel.updateState(user)) {
+                LOG_ERROR << "Failed to update user state to online for user: " << id;
+            }
             CacheManager::instance()->cacheUser(user);
             CacheManager::instance()->cacheUserStatus(user.getId(), "online");
 
@@ -152,7 +154,9 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
                 response.add_offlinemsg(base64Encode(msg));
             }
             // 读取该用户的离线消息后，把该用户的所有离线消息删除掉
-            _offlineMsgModel.remove(id);
+            if (!_offlineMsgModel.remove(id)) {
+                LOG_ERROR << "Failed to remove offline messages for user: " << id;
+            }
 
             // 查询该用户的好友信息并返回
             vector<User> userVec = _friendModel.query(id);
@@ -307,7 +311,9 @@ void ChatService::loginout(const TcpConnectionPtr &conn, const string &data, Tim
 
     // 更新用户的状态信息
     User user(userid, "", "", "offline");
-    _userModel.updateState(user);
+    if (!_userModel.updateState(user)) {
+        LOG_ERROR << "Failed to update user state to offline in loginout for user: " << userid;
+    }
 
     // 清除 Redis 缓存
     CacheManager::instance()->invalidateUserStatus(userid);
@@ -337,7 +343,9 @@ void ChatService::clientCloseException(const TcpConnectionPtr &conn)
     if (user.getId() != -1)
     {
         user.setState("offline");
-        _userModel.updateState(user);
+        if (!_userModel.updateState(user)) {
+            LOG_ERROR << "Failed to update user state to offline for user: " << user.getId();
+        }
 
         // 清除 Redis 缓存
         CacheManager::instance()->invalidateUserStatus(user.getId());
@@ -391,7 +399,9 @@ void ChatService::oneChat(const TcpConnectionPtr &conn, const string &data, Time
     }
 
     // toid不在线，存储离线消息
-    _offlineMsgModel.insert(toid, serializedMsg);
+    if (!_offlineMsgModel.insert(toid, serializedMsg)) {
+        LOG_ERROR << "Failed to store offline message for user: " << toid;
+    }
 }
 
 // 添加好友业务 msgid id friendid
@@ -530,7 +540,9 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
         }
         if (state != "online")
         {
-            _offlineMsgModel.insert(id, serializedMsg);
+            if (!_offlineMsgModel.insert(id, serializedMsg)) {
+                LOG_ERROR << "Failed to store offline group msg for user: " << id;
+            }
         }
     }
 
@@ -574,7 +586,9 @@ void ChatService::handleKafkaMessage(const string& topic, const string& message)
                                     + to_string(groupid) + ":" + to_string(fromid)
                                     + ":" + to_string(msgTime);
                     if (CacheManager::instance()->setNx(dedupKey, "1", 30)) {
-                        _offlineMsgModel.insert(id, message);
+                        if (!_offlineMsgModel.insert(id, message)) {
+                            LOG_ERROR << "Failed to store group offline msg for user: " << id;
+                        }
                     }
                 }
             }
@@ -602,7 +616,9 @@ void ChatService::handleKafkaMessage(const string& topic, const string& message)
                 string dedupKey = "offline:" + to_string(fromid) + ":"
                                 + to_string(targetUserId) + ":" + to_string(msgTime);
                 if (CacheManager::instance()->setNx(dedupKey, "1", 30)) {
-                    _offlineMsgModel.insert(targetUserId, message);
+                    if (!_offlineMsgModel.insert(targetUserId, message)) {
+                        LOG_ERROR << "Failed to store kafka offline msg for user: " << targetUserId;
+                    }
                 }
             }
         }
@@ -662,7 +678,10 @@ bool ChatService::sendMessageByMcp(int fromId, int toId, const string& messageCo
         return true;
     }
 
-    _offlineMsgModel.insert(toId, serializedMsg);
+    if (!_offlineMsgModel.insert(toId, serializedMsg)) {
+        LOG_ERROR << "[MCP] Failed to store offline message for user " << toId;
+        return false;
+    }
     LOG_INFO << "[MCP] Stored offline message from user " << fromId << " to user " << toId;
     return true;
 }

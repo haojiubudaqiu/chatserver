@@ -25,7 +25,6 @@ public:
     Group queryGroup(int groupid);
 
 private:
-    CacheManager* _cacheManager;
 };
 
 #endif

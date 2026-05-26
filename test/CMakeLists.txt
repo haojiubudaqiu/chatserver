@@ -9,8 +9,10 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/../include/server/redis
     ${PROJECT_SOURCE_DIR}/../include/server/kafka
     ${PROJECT_SOURCE_DIR}/../include/server/log
+    ${PROJECT_SOURCE_DIR}/../src/server/proto
     /usr/include/mysql
     /usr/include/hiredis
+    /home/song/.local/include
 )
 
 # Find libraries

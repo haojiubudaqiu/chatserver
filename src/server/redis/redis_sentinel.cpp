@@ -1,5 +1,5 @@
-#include "redis_sentinel.h"
 #include <iostream>
+#include "redis_sentinel.h"
 #include <sstream>
 #include <muduo/base/Logging.h>
 
