@@ -241,11 +241,13 @@ echo "$ROWS" | grep -q "1" && pass "重复加入群组幂等" || fail "重复加
 
 # 7e. 加入不存在的群组
 OUT=$(echo -e "1\n$B_ID\npass_b\naddgroup:99999\nloginout\n" | timeout $TIMEOUT $CHAT_CLIENT $SERVER1 $PORT2 2>&1)
-# insert ignore 会静默成功，但无实际效果
+echo "$OUT" | grep -q "Join group failed" && \
+    pass "加入不存在群组 99999 返回错误" || fail "加入不存在群组未返回错误: $(echo "$OUT" | grep -i 'group\|fail\|error' | tr '\n' ' ')"
 ROWS=$(mysql_q "SELECT COUNT(*) as c FROM groupuser WHERE groupid=99999;")
-echo "$ROWS" | grep -q "0" && pass "加入不存在群组 99999 无效果" || fail "加入不存在群组产生记录"
+echo "$ROWS" | grep -q "0" && pass "加入不存在群组 99999 无记录" || fail "加入不存在群组产生记录"
 
 # 7f. B 在线，D 在线，群聊测试
+mysql_q "DELETE FROM offlinemessage;" > /dev/null
 { echo -e "1\n$B_ID\npass_b\n"; sleep 10; } | timeout $TIMEOUT $CHAT_CLIENT $SERVER1 $PORT2 > /tmp/b_group_chat.txt 2>&1 &
 B_PID=$!
 sleep 2
@@ -260,13 +262,17 @@ sleep 3
 kill $B_PID $D_PID 2>/dev/null; wait $B_PID $D_PID 2>/dev/null
 
 grep -qE "said:|群消息" /tmp/b_group_chat.txt 2>/dev/null && \
-    pass "群聊消息 B 收到" || pass "群聊消息 B 未实时收到（可能离线）"
+    pass "群聊: B 从 6001 收到（跨服 Kafka 送达）" || fail "群聊: B 未从 6001 收到"
 grep -qE "said:|群消息" /tmp/d_group_chat.txt 2>/dev/null && \
-    pass "群聊消息 D 通过 Nginx 收到" || pass "群聊消息 D 未实时收到（可能离线）"
+    pass "群聊: D 通过 Nginx 收到" || pass "群聊: D 未实时收到（可能离线）"
 
 # Verify A is not in offline for their own message
 MSG_CNT=$(mysql_q "SELECT COUNT(*) as c FROM offlinemessage WHERE userid=$A_ID;")
 echo "$MSG_CNT" | grep -q "0" && pass "群聊: A 没有自己消息的离线副本" || fail "群聊: A 有自己消息的离线副本（不应存在）"
+
+# 验证 B（在线跨服）没有离线消息 — 防止 Kafka loopback 的 cross-server offline leak
+B_OFF_CNT=$(mysql_q "SELECT COUNT(*) as c FROM offlinemessage WHERE userid=$B_ID;" | grep -oP '^\d+' || echo "0")
+[ "$B_OFF_CNT" = "0" ] && pass "群聊: B（在线跨服）没有离线消息" || fail "群聊: B 有 $B_OFF_CNT 条不应存在的离线消息"
 
 # ======== 1.8 离线消息 ========
 echo ""
@@ -338,10 +344,34 @@ echo "$OUT" | grep -q "said:" && pass "C 登录收到跨服离线消息" || fail
 MSG_CNT=$(mysql_q "SELECT COUNT(*) as c FROM offlinemessage WHERE userid=$C_ID;")
 echo "$MSG_CNT" | grep -q "0" && pass "跨服离线消息读取后删除" || fail "跨服离线消息未删除"
 
-# ======== 1.10 客户端断线 ========
+# ======== 1.10 群聊离线消息 ========
 echo ""
 echo "============================================================"
-echo " TEST 10: 客户端断线"
+echo " TEST 10: 群聊离线消息"
+echo "============================================================"
+
+mysql_q "DELETE FROM offlinemessage;" > /dev/null
+
+# C 离线，A 发群消息
+OUT=$(echo -e "1\n$A_ID\npass_a\ngroupchat:$GROUP_ID:Group offline test\nloginout\n" | timeout $TIMEOUT $CHAT_CLIENT $SERVER1 $PORT1 2>&1)
+sleep 2
+
+# C 应该有 1 条离线群消息
+C_OFF_CNT=$(mysql_q "SELECT COUNT(*) as c FROM offlinemessage WHERE userid=$C_ID;" | grep -oP '^\d+' || echo "0")
+[ "$C_OFF_CNT" = "1" ] && pass "群聊离线消息存储: C 有 1 条" || fail "群聊离线消息存储异常: C 有 $C_OFF_CNT 条（应为1）"
+
+# C 登录应收到
+OUT=$(echo -e "1\n$C_ID\npass_c\n3\n" | timeout $TIMEOUT $CHAT_CLIENT $SERVER1 $PORT3 2>&1)
+echo "$OUT" | grep -q "群消息\[$GROUP_ID\]" && pass "C 登录收到群聊离线消息" || fail "C 未收到群聊离线消息"
+
+# 读取后删除
+C_OFF_CNT=$(mysql_q "SELECT COUNT(*) as c FROM offlinemessage WHERE userid=$C_ID;" | grep -oP '^\d+' || echo "0")
+[ "$C_OFF_CNT" = "0" ] && pass "群聊离线消息读取后删除" || fail "群聊离线消息未删除（剩余 $C_OFF_CNT 条）"
+
+# ======== 1.11 客户端断线 ========
+echo ""
+echo "============================================================"
+echo " TEST 11: 客户端断线"
 echo "============================================================"
 
 # A 登录，然后断线（不 loginout）
@@ -357,10 +387,10 @@ echo "$ROW" | grep -q "offline" && pass "断线后状态自动变为 offline" ||
 OUT=$(echo -e "1\n$A_ID\npass_a\n3\n" | timeout $TIMEOUT $CHAT_CLIENT $SERVER1 $PORT1 2>&1)
 echo "$OUT" | grep -q "login user" && pass "断线后重新登录成功" || fail "断线后重新登录失败"
 
-# ======== 1.11 边界情况 ========
+# ======== 1.12 边界情况 ========
 echo ""
 echo "============================================================"
-echo " TEST 11: 边界情况"
+echo " TEST 12: 边界情况"
 echo "============================================================"
 
 # 11a. 空消息发送

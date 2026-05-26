@@ -408,8 +408,8 @@ void ChatService::addGroup(const TcpConnectionPtr &conn, const string &data, Tim
     int userid = addGroupReq.base().fromid();
     int groupid = addGroupReq.groupid();
 
-    Group group = _groupModel.queryGroup(groupid);
-    if (group.getId() == 0) {
+    Group group = _groupModel.queryGroup(groupid, true);
+    if (group.getId() < 1) {
         LOG_ERROR << "Group does not exist: " << groupid;
         chat::AddGroupResponse response;
         response.mutable_base()->set_msgid(chat::ADD_GROUP_MSG_ACK);
@@ -466,13 +466,18 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
     {
         string state = CacheManager::instance()->getUserStatus(id);
         if (state.empty()) {
-            User user = _userModel.query(id);
+            User user = _userModel.query(id, true);
             state = user.getState();
         }
         if (state != "online")
         {
-            if (!_offlineMsgModel.insert(id, serializedMsg)) {
-                LOG_ERROR << "Failed to store offline group msg for user: " << id;
+            string dedupKey = "group_offline:" + to_string(id) + ":"
+                            + to_string(groupid) + ":" + to_string(fromid)
+                            + ":" + to_string(groupChatMsg.base().time());
+            if (CacheManager::instance()->setNx(dedupKey, "1", 30)) {
+                if (!_offlineMsgModel.insert(id, serializedMsg)) {
+                    LOG_ERROR << "Failed to store offline group msg for user: " << id;
+                }
             }
         }
     }
@@ -545,6 +550,10 @@ void ChatService::handleKafkaGroupMessage(const string& message) {
         if (it != _userConnMap.end()) {
             sendMsg(it->second, groupMsg.base().msgid(), message);
         } else {
+            string state = CacheManager::instance()->getUserStatus(id);
+            if (state == "online") {
+                continue;
+            }
             string dedupKey = "group_offline:" + to_string(id) + ":"
                             + to_string(groupid) + ":" + to_string(fromid)
                             + ":" + to_string(msgTime);

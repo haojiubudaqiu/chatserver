@@ -15,7 +15,7 @@ public:
     bool addGroup(int userid, int groupid, string role);
     vector<Group> queryGroups(int userid);
     vector<int> queryGroupUsers(int userid, int groupid);
-    Group queryGroup(int groupid);
+    Group queryGroup(int groupid, bool forceMaster = false);
 };
 
 #endif

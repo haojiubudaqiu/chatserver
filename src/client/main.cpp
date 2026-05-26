@@ -256,18 +256,22 @@ void doLoginResponse(const string& responseData)
             // We need to base64 decode it first.
             string decodedMsg = base64Decode(msgStr);
             
-            chat::OneChatMessage oneChatMsg;
-            if (oneChatMsg.ParseFromString(decodedMsg)) {
-                cout << oneChatMsg.base().time() << " [" << oneChatMsg.base().fromid() << "]" 
-                     << " said: " << oneChatMsg.message() << endl;
-                continue;
-            }
-            
+            // Parse with msgid verification: a GroupChatMessage can be
+            // partially parsed as OneChatMessage (protobuf skips unknown
+            // fields). Without checking msgid, group offline messages
+            // get displayed as private chats with empty content.
             chat::GroupChatMessage groupChatMsg;
-            if (groupChatMsg.ParseFromString(decodedMsg)) {
+            if (groupChatMsg.ParseFromString(decodedMsg) && groupChatMsg.base().msgid() == chat::GROUP_CHAT_MSG) {
                 cout << "群消息[" << groupChatMsg.groupid() << "]:" << groupChatMsg.base().time() 
                      << " [" << groupChatMsg.base().fromid() << "]" 
                      << " said: " << groupChatMsg.message() << endl;
+                continue;
+            }
+            
+            chat::OneChatMessage oneChatMsg;
+            if (oneChatMsg.ParseFromString(decodedMsg) && oneChatMsg.base().msgid() == chat::ONE_CHAT_MSG) {
+                cout << oneChatMsg.base().time() << " [" << oneChatMsg.base().fromid() << "]" 
+                     << " said: " << oneChatMsg.message() << endl;
                 continue;
             }
         }

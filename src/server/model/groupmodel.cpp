@@ -129,21 +129,17 @@ vector<int> GroupModel::queryGroupUsers(int userid, int groupid)
     return idVec;
 }
 
-Group GroupModel::queryGroup(int groupid)
+Group GroupModel::queryGroup(int groupid, bool forceMaster)
 {
-    Group group = CacheManager::instance()->getGroup(groupid);
-    if (group.getId() != 0) {
-        return group;
-    }
-
     char sql[1024] = {0};
     sprintf(sql, "select id, groupname, groupdesc from allgroup where id = %d", groupid);
 
-    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery());
+    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery(forceMaster));
     if (!conn) {
         return Group();
     }
     
+    Group group;
     MYSQL_RES *res = conn->query(sql);
     if (res != nullptr)
     {

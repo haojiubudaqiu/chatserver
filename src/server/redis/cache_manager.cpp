@@ -110,11 +110,11 @@ Group CacheManager::getGroup(int groupId) {
     if (!_redisCache) return Group();
     
     Group group = _redisCache->getGroup(groupId);
-    if (group.getId() != 0) {
+    if (group.getId() > 0) {
         return group;
     }
     group = _groupModel->queryGroup(groupId);
-    if (group.getId() != 0) {
+    if (group.getId() > 0) {
         _redisCache->setGroup(group);
     }
     
