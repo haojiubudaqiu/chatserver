@@ -4,9 +4,9 @@
 DatabaseRouter* DatabaseRouter::instance_ = nullptr;
 std::mutex DatabaseRouter::mutex_;
 
-DatabaseRouter::DatabaseRouter() {}
+DatabaseRouter::DatabaseRouter() = default;
 
-DatabaseRouter::~DatabaseRouter() {}
+DatabaseRouter::~DatabaseRouter() = default;
 
 DatabaseRouter* DatabaseRouter::instance() {
     if (instance_ == nullptr) {

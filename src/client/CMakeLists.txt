@@ -10,7 +10,6 @@ add_executable(ChatClient ${SRC_LIST} ${PROTO_SRCS})
 
 # 指定客户端需要包含的头文件路径
 target_include_directories(ChatClient PRIVATE 
-    ${PROJECT_SOURCE_DIR}/include/client
     ${PROJECT_SOURCE_DIR}/src/server/proto
     ${CMAKE_CURRENT_BINARY_DIR}
 )
