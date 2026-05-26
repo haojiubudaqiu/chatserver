@@ -44,9 +44,9 @@ target_include_directories(ChatServer PRIVATE
 )
 
 # 检查librdkafka库是否存在
-find_library(RDKAFKA_LIBRARY rdkafka PATHS /home/song/.local/lib /usr/local/lib /usr/lib NO_DEFAULT_PATH)
-find_library(RDKAFKA++_LIBRARY rdkafka++ PATHS /home/song/.local/lib /usr/local/lib /usr/lib NO_DEFAULT_PATH)
-find_path(RDKAFKA_INCLUDE_DIR librdkafka/rdkafka.h PATHS /home/song/.local/include /usr/local/include /usr/include NO_DEFAULT_PATH)
+find_library(RDKAFKA_LIBRARY rdkafka)
+find_library(RDKAFKA++_LIBRARY rdkafka++)
+find_path(RDKAFKA_INCLUDE_DIR librdkafka/rdkafka.h)
 
 if(RDKAFKA_LIBRARY AND RDKAFKA++_LIBRARY AND RDKAFKA_INCLUDE_DIR)
     # 如果找到了librdkafka库，则添加相关配置

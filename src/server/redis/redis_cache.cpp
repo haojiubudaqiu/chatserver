@@ -400,13 +400,9 @@ bool RedisCache::deleteGroup(int groupId) {
 
 bool RedisCache::setUserStatus(int userId, const std::string& status) {
     redisContext* ctx = getContext();
-    if (ctx == nullptr) {
-        LOG_ERROR << "setUserStatus: getContext returned null for user " << userId;
-        return false;
-    }
+    if (ctx == nullptr) return false;
     
     std::string key = "user:status:" + std::to_string(userId);
-    LOG_INFO << "setUserStatus: SET " << key << " = " << status;
     
     redisReply* reply = (redisReply*)redisCommand(ctx, "SET %s %s", key.c_str(), status.c_str());
     if (reply == nullptr) {
@@ -414,7 +410,6 @@ bool RedisCache::setUserStatus(int userId, const std::string& status) {
         return false;
     }
     
-    LOG_INFO << "setUserStatus: SET reply type=" << reply->type << " str='" << (reply->str ? reply->str : "") << "'";
     freeReplyObject(reply);
     
     reply = (redisReply*)redisCommand(ctx, "EXPIRE %s 300", key.c_str());
@@ -436,18 +431,11 @@ std::string RedisCache::getUserStatus(int userId) {
     
     redisReply* reply = (redisReply*)redisCommand(ctx, "GET %s", key.c_str());
     if (reply == nullptr || reply->type != REDIS_REPLY_STRING) {
-        if (reply) {
-            LOG_INFO << "getUserStatus: GET " << key << " reply type=" << reply->type 
-                     << " (REDIS_REPLY_NIL=" << REDIS_REPLY_NIL << ")";
-            freeReplyObject(reply);
-        } else {
-            LOG_ERROR << "getUserStatus: redisCommand returned null";
-        }
+        if (reply) freeReplyObject(reply);
         return "";
     }
     
     std::string status(reply->str);
-    LOG_INFO << "getUserStatus: GET " << key << " = '" << status << "'";
     freeReplyObject(reply);
     return status;
 }

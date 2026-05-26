@@ -29,9 +29,6 @@ bool KafkaProducer::init() {
     // 创建新的Kafka配置对象
     rd_kafka_conf_t *conf = rd_kafka_conf_new();
     
-    // Debug
-    rd_kafka_conf_set(conf, "debug", "all", errstr, sizeof(errstr));
-    
     // 设置broker列表
     if (rd_kafka_conf_set(conf, "bootstrap.servers", brokers_.c_str(), errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK) {
         // 记录配置失败错误日志
