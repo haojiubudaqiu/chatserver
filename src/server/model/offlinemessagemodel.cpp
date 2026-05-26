@@ -37,7 +37,6 @@ vector<string> OfflineMsgModel::query(int userid)
 
     vector<string> vec;
     
-    // 强制读主库：离线消息的写入和读取有严格时序要求，从库复制延迟会导致消息丢失
     ConnectionGuard conn(DatabaseRouter::instance()->routeQuery(true));
     if (!conn) {
         return vec;

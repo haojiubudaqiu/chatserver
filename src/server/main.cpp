@@ -29,10 +29,8 @@ int main(int argc, char **argv)
         exit(-1);
     }
 
-    // 初始化异步日志系统（在任何日志输出之前）
     initAsyncLogging("ChatServer", 100 * 1024 * 1024, 3);
 
-    // 服务器启动参数
     bool resetStateOnStart = true;
     for (int i = 3; i < argc; ++i) {
         if (strcmp(argv[i], "--no-reset-state") == 0) {
@@ -75,7 +73,6 @@ int main(int argc, char **argv)
 
     MySQL::initEnvConnectionPool();
 
-    // 启动时重置所有用户状态为离线（避免服务器重启后状态不一致）
     if (resetStateOnStart) {
         ChatService::instance()->reset();
         LOG_INFO << "Reset all users to offline state on server start";

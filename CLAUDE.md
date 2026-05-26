@@ -91,6 +91,8 @@ chatserver/
 ├── nginx.conf              — Nginx TCP load balancer config
 ├── CMakeLists.txt          — Build configuration
 ├── autobuild.sh            — Build script
+├── autobuild.sh            — Build script
+├── start_servers.sh        — Start 3 local servers for development
 └── README.md               — Project documentation
 ```
 
@@ -109,18 +111,53 @@ chatserver/
 
 ## Common Development Tasks
 
+### Prerequisites
 ```bash
+# Start infrastructure (MySQL, Redis, Kafka, Nginx, Sentinel)
+docker compose up -d
+
 # Build
 cd build && cmake .. && make
+# Or: ./autobuild.sh
+```
 
-# Run server
-./bin/ChatServer 127.0.0.1 6000
+### Start Local Servers
+```bash
+# Quick start 3 servers (6000/6001/6002)
+./start_servers.sh
+# Stop: ./start_servers.sh --kill
 
-# Docker cluster
-docker-compose up -d
+# Or manually (must set env vars for Kafka group ID & port):
+SERVER_PORT=6000 KAFKA_HOST=localhost KAFKA_PORT=9093 nohup ./bin/ChatServer 0.0.0.0 6000 > /tmp/server0.log 2>&1 &
+SERVER_PORT=6001 KAFKA_HOST=localhost KAFKA_PORT=9093 nohup ./bin/ChatServer 0.0.0.0 6001 > /tmp/server1.log 2>&1 &
+SERVER_PORT=6002 KAFKA_HOST=localhost KAFKA_PORT=9093 nohup ./bin/ChatServer 0.0.0.0 6002 > /tmp/server2.log 2>&1 &
+```
 
-# Run tests
-./bin/protobuf_test
+### Critical Environment Variables
+- **`SERVER_PORT`** — MUST be set to the server's listening port (e.g. 6000). Used as Kafka group ID suffix to ensure broadcast semantics. Without this, all servers share the same group ID and cross-server messages get load-balanced instead of broadcast.
+- **`KAFKA_HOST=localhost`** — Default: localhost. Set for local development.
+- **`KAFKA_PORT=9093`** — Docker Kafka's EXTERNAL listener uses port 9093, not the internal 9092.
+- `REDIS_SENTINEL1/2/3` — Optional: Redis Sentinel addresses for HA mode.
+
+### Start Bridge & Frontend
+```bash
+# Python Bridge (already in docker compose or manually):
+# cd frontend/bridge && pip install -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+# Frontend (serve built dist):
+cd frontend/web && npx serve dist -l 3000
+```
+
+### Run Tests
+```bash
+# Full functional test (requires servers running)
+./test_full.sh
+
+# Unit tests
+./bin/test_db_pool
+./bin/test_redis
+./bin/test_models
+./bin/test_kafka
 ```
 
 ## Key Files to Understand

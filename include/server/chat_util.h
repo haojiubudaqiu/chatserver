@@ -2,6 +2,7 @@
 #define CHAT_UTIL_H
 
 #include <muduo/net/TcpConnection.h>
+#include <muduo/base/Timestamp.h>
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <openssl/buffer.h>
@@ -11,7 +12,6 @@
 #include <cstdint>
 #include "message.pb.h"
 
-// Base64 编码（OpenSSL 实现，无依赖问题）
 inline std::string base64Encode(const std::string& input) {
     if (input.empty()) return "";
     BIO* bio = BIO_new(BIO_s_mem());
@@ -27,7 +27,6 @@ inline std::string base64Encode(const std::string& input) {
     return result;
 }
 
-// Base64 解码
 inline std::string base64Decode(const std::string& input) {
     if (input.empty()) return "";
     BIO* bio = BIO_new_mem_buf(input.data(), input.size());
@@ -56,7 +55,6 @@ inline void sendMsg(const muduo::net::TcpConnectionPtr& conn, int32_t msgid, con
     conn->send(&buffer);
 }
 
-// Helper with SFINAE for C++17
 template <typename T, typename = void>
 struct HasBase : std::false_type {};
 
@@ -66,14 +64,21 @@ struct HasBase<T, std::void_t<decltype(std::declval<T>().base())>> : std::true_t
 template <typename T>
 inline void sendProtoMsg(const muduo::net::TcpConnectionPtr& conn, const T& msg) {
     int32_t msgid = chat::INVALID_MSG;
-    
+
     if constexpr (HasBase<T>::value) {
         msgid = msg.base().msgid();
     } else {
         msgid = msg.msgid();
     }
-    
+
     sendMsg(conn, msgid, msg.SerializeAsString());
+}
+
+inline void sendParseError(const muduo::net::TcpConnectionPtr& conn, muduo::Timestamp ts) {
+    chat::BaseMessage errorMsg;
+    errorMsg.set_msgid(chat::INVALID_MSG);
+    errorMsg.set_time(ts.microSecondsSinceEpoch());
+    sendProtoMsg(conn, errorMsg);
 }
 
 #endif

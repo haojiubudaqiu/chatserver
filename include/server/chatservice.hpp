@@ -33,6 +33,8 @@ public:
     void clientCloseException(const TcpConnectionPtr &conn);
     void reset();
     void handleKafkaMessage(const string& topic, const string& message);
+    void handleKafkaPrivateMessage(const string& message);
+    void handleKafkaGroupMessage(const string& message);
 
     UserModel& getUserModel() { return _userModel; }
     GroupModel& getGroupModel() { return _groupModel; }

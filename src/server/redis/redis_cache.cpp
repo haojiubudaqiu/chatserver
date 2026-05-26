@@ -1,23 +1,7 @@
 #include "redis_cache.h"
-#include <sstream>
 #include <cstdarg>
 #include <cstdlib>
 #include <muduo/base/Logging.h>
-
-/*
-redis_cache.cpp 实现了 RedisCache 类，
-用于在 C++ 服务器端和 Redis 数据库进行高效的数据缓存交互。
-它封装了对 Redis 的连接、用户/好友/群组/状态/离线消息等常用功能的读写操作，
-是业务逻辑和 Redis 之间的桥梁。
-这个实现让 Redis 成为你的聊天服务器高效的内存数据库，所有和用户、好友、群组、状态、离线消息有关的数据都可以用极低延迟读写，
-大幅提升了系统响应速度和并发性能。代码结构清晰，扩展性和维护性很高，
-是实际项目中非常典型、实用的 Redis 缓存操作封装。
-支持两种连接模式：
-1. 直连模式：connect() 直接连接 Redis
-2. 哨兵模式：connectWithSentinel() 通过哨兵集群连接，支持高可用
-*/
-
-
 
 RedisCache::RedisCache() : _context(nullptr) {}
 
@@ -27,7 +11,6 @@ RedisCache::~RedisCache() {
     }
 }
 
-//使用 C++ 局部静态变量创建全局唯一的 RedisCache 实例，方便整个项目统一调用缓存功能
 RedisCache* RedisCache::instance() {
     static RedisCache cache;
     return &cache;
@@ -467,55 +450,6 @@ bool RedisCache::deleteUserStatus(int userId) {
     return true;
 }
 
-bool RedisCache::setOfflineMsgCount(int userId, int count) {
-    std::lock_guard<std::mutex> lock(_mutex);
-    redisContext* ctx = getContext();
-    if (ctx == nullptr) return false;
-    
-    std::string key = "offline:count:" + std::to_string(userId);
-    
-    redisReply* reply = (redisReply*)redisCommand(ctx, "SET %s %d", key.c_str(), count);
-    if (reply == nullptr) {
-        LOG_ERROR << "Failed to set offline message count cache for user id: " << userId;
-        return false;
-    }
-    
-    freeReplyObject(reply);
-    
-    reply = (redisReply*)redisCommand(ctx, "EXPIRE %s 120", key.c_str());
-    if (reply != nullptr) {
-        freeReplyObject(reply);
-    }
-    
-    return true;
-}
-
-int RedisCache::getOfflineMsgCount(int userId) {
-    std::lock_guard<std::mutex> lock(_mutex);
-    redisContext* ctx = getContext();
-    if (ctx == nullptr) return 0;
-    
-    std::string key = "offline:count:" + std::to_string(userId);
-    
-    redisReply* reply = (redisReply*)redisCommand(ctx, "GET %s", key.c_str());
-    if (reply == nullptr) {
-        return 0;
-    }
-    
-    if (reply->type == REDIS_REPLY_NIL) {
-        freeReplyObject(reply);
-        return 0;
-    }
-    
-    int count = 0;
-    if (reply->type == REDIS_REPLY_STRING) {
-        count = std::stoi(reply->str);
-    }
-    
-    freeReplyObject(reply);
-    return count;
-}
-
 bool RedisCache::setNx(const std::string& key, const std::string& value, int ttlSeconds) {
     std::lock_guard<std::mutex> lock(_mutex);
     redisContext* ctx = getContext();
@@ -540,19 +474,3 @@ std::string RedisCache::getMasterAddr() const {
     return "127.0.0.1:6379";
 }
 
-bool RedisCache::deleteOfflineMsgCount(int userId) {
-    std::lock_guard<std::mutex> lock(_mutex);
-    redisContext* ctx = getContext();
-    if (ctx == nullptr) return false;
-    
-    std::string key = "offline:count:" + std::to_string(userId);
-    
-    redisReply* reply = (redisReply*)redisCommand(ctx, "DEL %s", key.c_str());
-    if (reply == nullptr) {
-        LOG_ERROR << "Failed to delete offline message count cache for user id: " << userId;
-        return false;
-    }
-    
-    freeReplyObject(reply);
-    return true;
-}

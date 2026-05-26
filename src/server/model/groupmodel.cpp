@@ -5,7 +5,6 @@
 
 GroupModel::GroupModel() {}
 
-// 创建群组
 bool GroupModel::createGroup(Group &group)
 {
     ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
@@ -25,17 +24,13 @@ bool GroupModel::createGroup(Group &group)
     if (conn->update(sql))
     {
         group.setId(mysql_insert_id(conn->getConnection()));
-        
-        // 缓存群组信息
         CacheManager::instance()->cacheGroup(group);
-        
         return true;
     }
     
     return false;
 }
 
-// 加入群组
 bool GroupModel::addGroup(int userid, int groupid, string role)
 {
     ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
@@ -51,14 +46,12 @@ bool GroupModel::addGroup(int userid, int groupid, string role)
             groupid, userid, role_escaped);
 
     if (conn->update(sql)) {
-        // 清除群组缓存
         CacheManager::instance()->invalidateGroup(groupid);
         return true;
     }
     return false;
 }
 
-// 查询用户所在群组信息
 vector<Group> GroupModel::queryGroups(int userid)
 {
     char sql[1024] = {0};
@@ -68,7 +61,6 @@ vector<Group> GroupModel::queryGroups(int userid)
 
     vector<Group> groupVec;
 
-    // 读操作，使用从库
     ConnectionGuard conn(DatabaseRouter::instance()->routeQuery());
     if (!conn) {
         return groupVec;
@@ -88,7 +80,6 @@ vector<Group> GroupModel::queryGroups(int userid)
         }
         mysql_free_result(res);
     }
-    // 查询群组的用户信息
     for (Group &group : groupVec)
     {
         sprintf(sql, "select a.id,a.name,a.state,b.grouprole from user a \
@@ -114,7 +105,6 @@ vector<Group> GroupModel::queryGroups(int userid)
     return groupVec;
 }
 
-// 根据指定的groupid查询群组用户id列表，除userid自己
 vector<int> GroupModel::queryGroupUsers(int userid, int groupid)
 {
     char sql[1024] = {0};
@@ -139,16 +129,13 @@ vector<int> GroupModel::queryGroupUsers(int userid, int groupid)
     return idVec;
 }
 
-// 根据群组ID查询群组信息
 Group GroupModel::queryGroup(int groupid)
 {
-    // 1. 先从Redis缓存查询（群组是高频访问数据）
     Group group = CacheManager::instance()->getGroup(groupid);
     if (group.getId() != 0) {
         return group;
     }
-    
-    // 2. 缓存未命中，从数据库查询
+
     char sql[1024] = {0};
     sprintf(sql, "select id, groupname, groupdesc from allgroup where id = %d", groupid);
 

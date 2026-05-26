@@ -38,7 +38,7 @@ void ChatServer::onMessage(const TcpConnectionPtr &conn,
                            Timestamp time)
 {
     while (buffer->readableBytes() >= 8) {
-        int32_t len = buffer->peekInt32(); // Length is msgid(4) + payload_size
+        int32_t len = buffer->peekInt32();
         if (len <= 0 || len > 1024 * 1024) { 
             LOG_ERROR << "Invalid length: " << len;
             conn->shutdown();
@@ -46,12 +46,12 @@ void ChatServer::onMessage(const TcpConnectionPtr &conn,
         }
         
         if (buffer->readableBytes() < static_cast<size_t>(len + 4)) {
-            break; // Message not fully arrived yet
+            break;
         }
         
-        buffer->retrieve(4); // Consume Length
-        int32_t msgid = buffer->readInt32(); // Consume MsgId
-        string buf = buffer->retrieveAsString(len - 4); // Consume Payload
+        buffer->retrieve(4);
+        int32_t msgid = buffer->readInt32();
+        string buf = buffer->retrieveAsString(len - 4);
         
         auto msgHandler = ProtoMsgHandlerMap::instance()->getHandler(static_cast<chat::MsgType>(msgid));
         if (msgHandler) {
