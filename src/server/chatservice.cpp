@@ -407,6 +407,19 @@ void ChatService::addGroup(const TcpConnectionPtr &conn, const string &data, Tim
 
     int userid = addGroupReq.base().fromid();
     int groupid = addGroupReq.groupid();
+
+    Group group = _groupModel.queryGroup(groupid);
+    if (group.getId() == 0) {
+        LOG_ERROR << "Group does not exist: " << groupid;
+        chat::AddGroupResponse response;
+        response.mutable_base()->set_msgid(chat::ADD_GROUP_MSG_ACK);
+        response.mutable_base()->set_time(time.microSecondsSinceEpoch());
+        response.set_err_num(1);
+        response.set_errmsg("Group does not exist");
+        sendProtoMsg(conn, response);
+        return;
+    }
+
     bool success = _groupModel.addGroup(userid, groupid, "normal");
 
     chat::AddGroupResponse response;
@@ -510,6 +523,20 @@ void ChatService::handleKafkaGroupMessage(const string& message) {
     int groupid = groupMsg.groupid();
     int fromid = groupMsg.base().fromid();
     int64_t msgTime = groupMsg.base().time();
+
+    // Skip if sender is on this server — groupChat() already handled local
+    // delivery and offline storage for non-local users on this server.
+    // Without this check, the Kafka loopback would cause:
+    //   1. Duplicate local delivery (user gets the message twice)
+    //   2. Cross-server offline leak (online user on another server gets
+    //      an offline message stored by the originating server)
+    {
+        lock_guard<mutex> lock(_connMutex);
+        if (_userConnMap.find(fromid) != _userConnMap.end()) {
+            return;
+        }
+    }
+
     vector<int> useridVec = _groupModel.queryGroupUsers(fromid, groupid);
 
     lock_guard<mutex> lock(_connMutex);
