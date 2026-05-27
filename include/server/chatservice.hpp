@@ -13,6 +13,7 @@ using namespace muduo::net;
 #include "friendmodel.hpp"
 #include "usermodel.hpp"
 #include "offlinemessagemodel.hpp"
+#include "chathistorymodel.hpp"
 #include "message.pb.h"
 #include "proto_msg_handler.h"
 #include "kafka_manager.h"
@@ -29,6 +30,7 @@ public:
     void createGroup(const TcpConnectionPtr &conn, const string &data, Timestamp time);
     void addGroup(const TcpConnectionPtr &conn, const string &data, Timestamp time);
     void groupChat(const TcpConnectionPtr &conn, const string &data, Timestamp time);
+    void getChatHistory(const TcpConnectionPtr &conn, const string &data, Timestamp time);
     void loginout(const TcpConnectionPtr &conn, const string &data, Timestamp time);
     void clientCloseException(const TcpConnectionPtr &conn);
     void reset();
@@ -54,6 +56,7 @@ private:
 
     UserModel _userModel;
     OfflineMsgModel _offlineMsgModel;
+    ChatHistoryModel _chatHistoryModel;
     FriendModel _friendModel;
     GroupModel _groupModel;
 

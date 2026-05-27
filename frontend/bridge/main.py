@@ -19,6 +19,7 @@ from chat_protocol import (
     make_register_request, make_login_request, make_logout_request,
     make_add_friend_request, make_one_chat_message,
     make_create_group_request, make_add_group_request, make_group_chat_message,
+    make_chat_history_request,
     RESPONSE_MAP,
 )
 from proto import message_pb2 as chat
@@ -371,6 +372,51 @@ async def api_send_group_message(body: dict):
         raise HTTPException(401, "Not logged in")
     await session.send(make_group_chat_message(user_id, group_id, text))
     return {"err_num": 0}
+
+
+def _decode_proto_msg(raw_b64: str) -> dict:
+    """Decode a base64-encoded protobuf message into a JSON-compatible dict."""
+    raw = base64.b64decode(raw_b64)
+    probe = chat.OneChatMessage()
+    probe.ParseFromString(raw)
+    msgtype = probe.base.msgid
+    if msgtype == chat.GROUP_CHAT_MSG:
+        inner = chat.GroupChatMessage()
+        inner.ParseFromString(raw)
+        return {
+            "type": "groupchat", "fromid": inner.base.fromid,
+            "groupid": inner.groupid, "time": inner.base.time,
+            "message": inner.message,
+        }
+    return {
+        "type": "chat", "fromid": probe.base.fromid,
+        "toid": probe.base.toid, "time": probe.base.time,
+        "message": probe.message,
+    }
+
+
+@app.post("/api/chat_history")
+async def api_chat_history(body: dict):
+    user_id = body.get("id")
+    peer_id = body.get("peer_id")
+    chat_type = body.get("chat_type")  # 1=private, 2=group
+    limit = body.get("limit", 50)
+    before_time = body.get("before_time", 0)
+    if not user_id or not peer_id or not chat_type:
+        raise HTTPException(400, "id, peer_id, chat_type required")
+    session = sessions.get(user_id)
+    if not session:
+        raise HTTPException(401, "Not logged in")
+    resp_data = await send_and_wait(session, chat.GET_CHAT_HISTORY_MSG,
+        make_chat_history_request(user_id, peer_id, chat_type, limit, before_time))
+    if resp_data is None:
+        raise HTTPException(502, "No response")
+    resp = chat.GetChatHistoryResponse()
+    resp.ParseFromString(resp_data)
+    if resp.err_num != 0:
+        raise HTTPException(400, resp.errmsg or "Failed to get chat history")
+    messages = [_decode_proto_msg(raw_b64) for raw_b64 in resp.messages]
+    return {"err_num": 0, "messages": messages}
 
 
 @app.get("/api/me/{user_id}")

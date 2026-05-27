@@ -314,7 +314,12 @@ void ChatService::oneChat(const TcpConnectionPtr &conn, const string &data, Time
     }
 
     int toid = chatMsg.base().toid();
+    int fromid = chatMsg.base().fromid();
+    int64_t msgTime = chatMsg.base().time();
+    string content = chatMsg.message();
     string serializedMsg = chatMsg.SerializeAsString();
+
+    _chatHistoryModel.insert(1, fromid, toid, content, msgTime);
 
     {
         lock_guard<mutex> lock(_connMutex);
@@ -441,7 +446,11 @@ void ChatService::groupChat(const TcpConnectionPtr &conn, const string &data, Ti
 
     int fromid = groupChatMsg.base().fromid();
     int groupid = groupChatMsg.groupid();
+    int64_t msgTime = groupChatMsg.base().time();
+    string content = groupChatMsg.message();
     string serializedMsg = groupChatMsg.SerializeAsString();
+
+    _chatHistoryModel.insert(2, fromid, groupid, content, msgTime);
 
     vector<int> useridVec = _groupModel.queryGroupUsers(fromid, groupid);
     vector<int> nonLocalUsers;
@@ -592,12 +601,15 @@ bool ChatService::sendMessageByMcp(int fromId, int toId, const string& messageCo
     if (messageContent.empty()) return false;
     
     chat::OneChatMessage chatMsg;
+    int64_t now = muduo::Timestamp::now().microSecondsSinceEpoch();
     chatMsg.mutable_base()->set_msgid(chat::ONE_CHAT_MSG);
     chatMsg.mutable_base()->set_fromid(fromId);
     chatMsg.mutable_base()->set_toid(toId);
-    chatMsg.mutable_base()->set_time(muduo::Timestamp::now().microSecondsSinceEpoch());
+    chatMsg.mutable_base()->set_time(now);
     chatMsg.set_message(messageContent);
     string serializedMsg = chatMsg.SerializeAsString();
+
+    _chatHistoryModel.insert(1, fromId, toId, messageContent, now);
 
     {
         lock_guard<mutex> lock(_connMutex);
@@ -631,4 +643,54 @@ bool ChatService::sendMessageByMcp(int fromId, int toId, const string& messageCo
     }
     LOG_INFO << "[MCP] Stored offline message from user " << fromId << " to user " << toId;
     return true;
+}
+
+void ChatService::getChatHistory(const TcpConnectionPtr &conn, const string &data, Timestamp time)
+{
+    chat::GetChatHistoryRequest req;
+    if (!req.ParseFromString(data)) {
+        LOG_ERROR << "Failed to parse GetChatHistoryRequest";
+        sendParseError(conn, time);
+        return;
+    }
+
+    int userId = req.base().fromid();
+    int peerId = req.peer_id();
+    int chatType = req.chat_type();
+    int limit = req.limit() > 0 ? req.limit() : 50;
+    int64_t beforeTime = req.before_time();
+
+    vector<ChatRecord> historyRecs;
+    if (chatType == 1) {
+        historyRecs = _chatHistoryModel.queryPrivateChat(userId, peerId, limit, beforeTime);
+    } else if (chatType == 2) {
+        historyRecs = _chatHistoryModel.queryGroupChat(peerId, limit, beforeTime);
+    }
+
+    chat::GetChatHistoryResponse response;
+    response.mutable_base()->set_msgid(chat::GET_CHAT_HISTORY_MSG_ACK);
+    response.mutable_base()->set_time(time.microSecondsSinceEpoch());
+    response.set_err_num(0);
+
+    for (const ChatRecord& rec : historyRecs) {
+        if (rec.msgType == 1) {
+            chat::OneChatMessage msg;
+            msg.mutable_base()->set_msgid(chat::ONE_CHAT_MSG);
+            msg.mutable_base()->set_fromid(rec.fromId);
+            msg.mutable_base()->set_toid(rec.toId);
+            msg.mutable_base()->set_time(rec.msgTime);
+            msg.set_message(rec.content);
+            response.add_messages(base64Encode(msg.SerializeAsString()));
+        } else if (rec.msgType == 2) {
+            chat::GroupChatMessage msg;
+            msg.mutable_base()->set_msgid(chat::GROUP_CHAT_MSG);
+            msg.mutable_base()->set_fromid(rec.fromId);
+            msg.mutable_base()->set_time(rec.msgTime);
+            msg.set_groupid(rec.toId);
+            msg.set_message(rec.content);
+            response.add_messages(base64Encode(msg.SerializeAsString()));
+        }
+    }
+
+    sendProtoMsg(conn, response);
 }

@@ -62,6 +62,7 @@ int main(int argc, char **argv)
     handlerMap->registerHandler(chat::CREATE_GROUP_MSG, std::bind(&ChatService::createGroup, ChatService::instance(), std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     handlerMap->registerHandler(chat::ADD_GROUP_MSG, std::bind(&ChatService::addGroup, ChatService::instance(), std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     handlerMap->registerHandler(chat::GROUP_CHAT_MSG, std::bind(&ChatService::groupChat, ChatService::instance(), std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    handlerMap->registerHandler(chat::GET_CHAT_HISTORY_MSG, std::bind(&ChatService::getChatHistory, ChatService::instance(), std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 
     if (g_mcpPort > 0) {
         if (ChatMcpServer::instance()->start(g_mcpPort)) {

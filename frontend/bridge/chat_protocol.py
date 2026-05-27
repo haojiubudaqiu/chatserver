@@ -25,6 +25,7 @@ RESPONSE_MAP = {
     chat.ADD_FRIEND_MSG: chat.ADD_FRIEND_MSG_ACK,
     chat.CREATE_GROUP_MSG: chat.CREATE_GROUP_MSG_ACK,
     chat.ADD_GROUP_MSG: chat.ADD_GROUP_MSG_ACK,
+    chat.GET_CHAT_HISTORY_MSG: chat.GET_CHAT_HISTORY_MSG_ACK,
 }
 
 # Server-pushed message types (those that arrive without a matching request)
@@ -106,6 +107,18 @@ def make_add_group_request(userid: int, groupid: int) -> bytes:
     req.base.fromid = userid
     req.base.time = int(time.time())
     req.groupid = groupid
+    return pack_message(req)
+
+
+def make_chat_history_request(userid: int, peer_id: int, chat_type: int, limit: int = 50, before_time: int = 0) -> bytes:
+    req = chat.GetChatHistoryRequest()
+    req.base.msgid = chat.GET_CHAT_HISTORY_MSG
+    req.base.fromid = userid
+    req.base.time = int(time.time())
+    req.peer_id = peer_id
+    req.chat_type = chat_type
+    req.limit = limit
+    req.before_time = before_time
     return pack_message(req)
 
 

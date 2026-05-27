@@ -61,6 +61,20 @@ INSERT INTO user (name, password, state) VALUES
 ('user3', 'pass789', 'offline')
 ON DUPLICATE KEY UPDATE name=name;
 
+-- 聊天消息持久化表（全量历史记录）
+CREATE TABLE IF NOT EXISTS chat_message (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    msg_type TINYINT NOT NULL COMMENT '1=private, 2=group',
+    from_id INT NOT NULL,
+    to_id INT NOT NULL COMMENT 'for private: recipient id, for group: group id',
+    content TEXT NOT NULL,
+    msg_time BIGINT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (from_id) REFERENCES user(id) ON DELETE CASCADE,
+    INDEX idx_chat_private (msg_type, from_id, to_id, msg_time DESC),
+    INDEX idx_chat_group (msg_type, to_id, msg_time DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- 创建索引优化查询性能  索引通过牺牲少量的写入性能（因为写入数据时也要更新目录）和存储空间，来极大地提升查询速度。
 CREATE INDEX idx_user_state ON user(state); --加速“查询所有在线用户”这类操作。
 CREATE INDEX idx_friend_userid ON friend(userid); --加速“查询某用户的所有好友”和“查询谁把我加为好友”的操作。

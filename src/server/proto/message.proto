@@ -22,6 +22,8 @@ enum MsgType {
   ADD_GROUP_MSG_ACK = 13;
   GROUP_CHAT_MSG = 9;
   LOGINOUT_MSG = 10;
+  GET_CHAT_HISTORY_MSG = 14;
+  GET_CHAT_HISTORY_MSG_ACK = 15;
 }
 
 // 用户信息
@@ -146,4 +148,21 @@ message AddGroupResponse {
 // 登出消息
 message LogoutRequest {
     BaseMessage base = 1;
+}
+
+// 聊天历史请求
+message GetChatHistoryRequest {
+    BaseMessage base = 1;
+    int32 peer_id = 2;
+    int32 chat_type = 3;
+    int32 limit = 4;
+    int64 before_time = 5;
+}
+
+// 聊天历史响应
+message GetChatHistoryResponse {
+    BaseMessage base = 1;
+    int32 err_num = 2;
+    string errmsg = 3;
+    repeated string messages = 4;
 }
