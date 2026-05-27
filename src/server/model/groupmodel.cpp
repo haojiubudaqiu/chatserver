@@ -61,7 +61,7 @@ vector<Group> GroupModel::queryGroups(int userid)
 
     vector<Group> groupVec;
 
-    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery());
+    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery(true));
     if (!conn) {
         return groupVec;
     }
@@ -111,7 +111,7 @@ vector<int> GroupModel::queryGroupUsers(int userid, int groupid)
     sprintf(sql, "select userid from groupuser where groupid = %d and userid != %d", groupid, userid);
 
     vector<int> idVec;
-    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery());
+    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery(true));
     if (!conn) {
         return idVec;
     }
