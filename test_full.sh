@@ -23,7 +23,11 @@ mysql_q() {
 }
 
 clean_db() {
-    mysql_q "DELETE FROM offlinemessage; DELETE FROM friend; DELETE FROM groupuser; DELETE FROM allgroup; DELETE FROM user WHERE name LIKE 'test_%' OR name='alice' OR name='bob';" > /dev/null 2>&1
+    # Only delete records related to test users
+    mysql_q "DELETE FROM offlinemessage WHERE userid IN (SELECT id FROM user WHERE name LIKE 'test_%' OR name='alice' OR name='bob');" > /dev/null 2>&1
+    mysql_q "DELETE FROM friend WHERE userid IN (SELECT id FROM user WHERE name LIKE 'test_%' OR name='alice' OR name='bob') OR friendid IN (SELECT id FROM user WHERE name LIKE 'test_%' OR name='alice' OR name='bob');" > /dev/null 2>&1
+    mysql_q "DELETE FROM groupuser WHERE userid IN (SELECT id FROM user WHERE name LIKE 'test_%' OR name='alice' OR name='bob');" > /dev/null 2>&1
+    mysql_q "DELETE FROM user WHERE name LIKE 'test_%' OR name='alice' OR name='bob';" > /dev/null 2>&1
 }
 
 echo "============================================================"

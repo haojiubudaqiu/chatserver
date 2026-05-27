@@ -183,15 +183,20 @@ class ChatAgent:
                 )
 
                 # Build LangChain-compatible tool
-                from langchain_core.tools import tool as lc_tool
+                from langchain_core.tools import StructuredTool
 
-                @lc_tool
-                async def mcp_fn(_w=wrapper, **kwargs: Any) -> str:
-                    return await _w.arun(**kwargs)
+                def make_arun_wrapper(w: McpToolWrapper):
+                    async def mcp_fn(**kwargs: Any) -> str:
+                        return await w.arun(**kwargs)
+                    return mcp_fn
 
-                mcp_fn.name = td["name"]
-                mcp_fn.description = td.get("description", "")
-                tools.append(mcp_fn)
+                mcp_tool = StructuredTool.from_function(
+                    coroutine=make_arun_wrapper(wrapper),
+                    name=td["name"],
+                    description=td.get("description", "MCP Tool"),
+                )
+                
+                tools.append(mcp_tool)
                 logger.info(f"  Loaded MCP tool: {td['name']}")
 
             logger.info(f"Loaded {len(tool_defs)} MCP tools")
@@ -214,7 +219,14 @@ class ChatAgent:
 
             llm = FakeMessagesListChatModel(responses=[AIMessage(content="I am a dummy AI assistant.")])
 
-        llm_with_tools = llm.bind_tools(tools) if tools else llm
+        if tools:
+            try:
+                llm_with_tools = llm.bind_tools(tools)
+            except NotImplementedError:
+                logger.warning("LLM does not support tool binding, running without tools")
+                llm_with_tools = llm
+        else:
+            llm_with_tools = llm
 
         # ── Build Graph ──────────────────────────────────────────
         def call_model(state: AgentState) -> dict:

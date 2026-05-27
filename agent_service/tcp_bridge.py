@@ -120,7 +120,10 @@ class AgentTcpClient:
                     content = probe.message
                     timestamp = probe.base.time
                 if sender_id != self._agent_id and self._on_message:
-                    self._on_message(sender_id, content, timestamp)
+                    if asyncio.iscoroutinefunction(self._on_message):
+                        asyncio.create_task(self._on_message(sender_id, content, timestamp))
+                    else:
+                        self._on_message(sender_id, content, timestamp)
             except Exception as e:
                 logger.warning(f"Failed to dispatch offline message: {e}")
 
@@ -141,11 +144,20 @@ class AgentTcpClient:
                         continue
 
                     if self._on_message:
-                        self._on_message(
-                            chat_msg.base.fromid,
-                            chat_msg.message,
-                            chat_msg.base.time,
-                        )
+                        if asyncio.iscoroutinefunction(self._on_message):
+                            asyncio.create_task(
+                                self._on_message(
+                                    chat_msg.base.fromid,
+                                    chat_msg.message,
+                                    chat_msg.base.time,
+                                )
+                            )
+                        else:
+                            self._on_message(
+                                chat_msg.base.fromid,
+                                chat_msg.message,
+                                chat_msg.base.time,
+                            )
 
             except asyncio.IncompleteReadError:
                 logger.warning("Connection lost, reconnecting...")

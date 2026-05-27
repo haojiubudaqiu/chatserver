@@ -62,6 +62,7 @@ INSERT INTO user (name, password, state) VALUES
 ON DUPLICATE KEY UPDATE name=name;
 
 -- 智能 AI 助手（固定 ID 10000）
+SET NAMES utf8mb4;
 INSERT INTO user (id, name, password, state) VALUES (10000, 'AI智能助手', 'ai_token_123', 'offline')
 ON DUPLICATE KEY UPDATE name=name;
 

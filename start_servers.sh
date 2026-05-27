@@ -9,12 +9,13 @@ if [ "$1" = "--kill" ]; then
     KILL_ONLY=true
 fi
 
-echo "Stopping existing ChatServer instances..."
+echo "Stopping existing ChatServer and Agent instances..."
 killall -9 ChatServer 2>/dev/null || true
+pkill -f "agent_service/main.py" 2>/dev/null || true
 sleep 1
 
 if [ "$KILL_ONLY" = true ]; then
-    echo "All ChatServer instances stopped."
+    echo "All ChatServer and Agent instances stopped."
     exit 0
 fi
 
@@ -34,6 +35,12 @@ echo "  PID $! - Port 6001 (log: /tmp/server1.log)"
 SERVER_PORT=6002 nohup ./bin/ChatServer 0.0.0.0 6002 > /tmp/server2.log 2>&1 &
 sleep 3
 echo "  PID $! - Port 6002 (log: /tmp/server2.log)"
+
+echo ""
+echo "Starting AI Agent service..."
+nohup python3 agent_service/main.py > /tmp/agent.log 2>&1 &
+sleep 2
+echo "  PID $! - Agent service (log: /tmp/agent.log)"
 
 echo ""
 echo "All servers started. Check:"
