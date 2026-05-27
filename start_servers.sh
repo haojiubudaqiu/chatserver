@@ -23,7 +23,7 @@ export KAFKA_PORT=9093
 
 echo "Starting ChatServer on ports 6000, 6001, 6002..."
 
-SERVER_PORT=6000 nohup ./bin/ChatServer 0.0.0.0 6000 > /tmp/server0.log 2>&1 &
+SERVER_PORT=6000 nohup ./bin/ChatServer 0.0.0.0 6000 --mcp-port 8888 > /tmp/server0.log 2>&1 &
 sleep 3
 echo "  PID $! - Port 6000 (log: /tmp/server0.log)"
 

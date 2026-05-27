@@ -61,6 +61,10 @@ INSERT INTO user (name, password, state) VALUES
 ('user3', 'pass789', 'offline')
 ON DUPLICATE KEY UPDATE name=name;
 
+-- 智能 AI 助手（固定 ID 10000）
+INSERT INTO user (id, name, password, state) VALUES (10000, 'AI智能助手', 'ai_token_123', 'offline')
+ON DUPLICATE KEY UPDATE name=name;
+
 -- 聊天消息持久化表（全量历史记录）
 CREATE TABLE IF NOT EXISTS chat_message (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

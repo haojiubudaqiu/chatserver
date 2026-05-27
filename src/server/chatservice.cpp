@@ -223,6 +223,10 @@ void ChatService::reg(const TcpConnectionPtr &conn, const string &data, Timestam
     try {
         bool state = _userModel.insert(user);
         if (state) {
+            // 注册成功后自动添加 AI 助手为好友
+            _friendModel.insert(user.getId(), 10000);
+            _friendModel.insert(10000, user.getId());
+
             chat::RegisterResponse response;
             response.mutable_base()->set_msgid(chat::REG_MSG_ACK);
             response.mutable_base()->set_time(time.microSecondsSinceEpoch());
