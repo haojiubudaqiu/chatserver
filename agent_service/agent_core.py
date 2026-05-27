@@ -8,27 +8,22 @@ Workflow:
   4. Agent replies via TCP
 """
 
-import os
+import aiohttp
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langchain_core.tools import tool
-from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph.message import add_messages
-from typing import TypedDict, Annotated, Sequence
-from langchain_core.messages import BaseMessage
+from typing import TypedDict, Annotated
+
+import config
 
 logger = logging.getLogger("agent_core")
-
-os.environ["TAVILY_API_KEY"] = os.environ.get("TAVILY_API_KEY", "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")
-os.environ["MODELSCOPE_API_KEY"] = os.environ.get("MODELSCOPE_API_KEY", "ms-5a8fdbd8-8b94-40b4-94ed-6015c5adb297")
-MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8888/mcp")
 
 
 class AgentState(TypedDict):
@@ -38,18 +33,49 @@ class AgentState(TypedDict):
 
 
 class McpSession:
-    """Manages an MCP Streamable HTTP session lifecycle."""
+    """Short-lived MCP session for a single tool call."""
 
-    def __init__(self, server_url: str, http_session: Any):
+    def __init__(self, server_url: str) -> None:
         self._server_url = server_url
-        self._http = http_session
         self._session_id: Optional[str] = None
 
-    async def initialize(self) -> bool:
-        """Initialize MCP session: send initialize + notifications/initialized."""
-        try:
-            # Step 1: initialize request
-            init_req = {
+    async def _request(self, body: dict, timeout: int = 10) -> Any:
+        """Send a JSON-RPC request to the MCP server and return the result."""
+        import aiohttp
+
+        headers = {}
+        if self._session_id:
+            headers["Mcp-Session-Id"] = self._session_id
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                self._server_url,
+                json=body,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+                # Capture session ID from initialize response
+                if self._session_id is None:
+                    sid = resp.headers.get("Mcp-Session-Id")
+                    if sid:
+                        self._session_id = sid
+
+                # Check for JSON-RPC error
+                if "error" in data:
+                    raise RuntimeError(
+                        f"MCP error (code={data['error'].get('code')}): "
+                        f"{data['error'].get('message')}"
+                    )
+
+                return data.get("result")
+
+    async def initialize(self) -> None:
+        """Initialize a new MCP session."""
+        result = await self._request(
+            {
                 "jsonrpc": "2.0",
                 "id": "1",
                 "method": "initialize",
@@ -59,193 +85,192 @@ class McpSession:
                     "clientInfo": {"name": "agent-service", "version": "1.0"},
                 },
             }
-            async with self._http.post(
-                self._server_url, json=init_req, timeout=aiohttp.ClientTimeout(total=5)
-            ) as resp:
-                self._session_id = resp.headers.get("Mcp-Session-Id", "")
-                await resp.json()
+        )
+        if result is None:
+            raise RuntimeError("MCP initialize returned no result")
 
-            if not self._session_id:
-                logger.error("No Mcp-Session-Id in initialize response")
-                return False
-
-            # Step 2: initialized notification
-            notif = {"jsonrpc": "2.0", "method": "notifications/initialized"}
-            async with self._http.post(
+        # Send initialized notification
+        async with aiohttp.ClientSession() as session:
+            await session.post(
                 self._server_url,
-                json=notif,
+                json={"jsonrpc": "2.0", "method": "notifications/initialized"},
                 headers={"Mcp-Session-Id": self._session_id},
                 timeout=aiohttp.ClientTimeout(total=5),
-            ):
-                pass
-
-            logger.info(f"MCP session initialized: {self._session_id[:16]}...")
-            return True
-
-        except Exception as e:
-            logger.error(f"MCP session initialization failed: {e}")
-            return False
+            )
 
     async def list_tools(self) -> list:
-        """List available MCP tools."""
-        req = {"jsonrpc": "2.0", "id": "2", "method": "tools/list"}
-        async with self._http.post(
-            self._server_url,
-            json=req,
-            headers={"Mcp-Session-Id": self._session_id},
-            timeout=aiohttp.ClientTimeout(total=5),
-        ) as resp:
-            result = await resp.json()
-            return result.get("result", {}).get("tools", [])
+        """List available tools."""
+        result = await self._request(
+            {"jsonrpc": "2.0", "id": "2", "method": "tools/list"}
+        )
+        return (result or {}).get("tools", [])
 
     async def call_tool(self, name: str, arguments: dict) -> str:
-        """Call an MCP tool and return the result text."""
-        req = {
-            "jsonrpc": "2.0",
-            "id": "3",
-            "method": "tools/call",
-            "params": {"name": name, "arguments": arguments},
-        }
-        async with self._http.post(
-            self._server_url,
-            json=req,
-            headers={"Mcp-Session-Id": self._session_id},
-            timeout=aiohttp.ClientTimeout(total=10),
-        ) as resp:
-            result = await resp.json()
-            content = result.get("result", {}).get("content", [])
-            parts = []
-            for c in content:
-                if isinstance(c, dict):
-                    parts.append(c.get("text", json.dumps(c)))
-                else:
-                    parts.append(str(c))
-            return "\n".join(parts)
-
-    @property
-    def session_id(self) -> str:
-        return self._session_id or ""
-
-
-class AgentCore:
-    def __init__(self):
-        self._app = None
-        self._memory = MemorySaver()
-        self._http_session: Optional[Any] = None
-        self._mcp_session: Optional[McpSession] = None
-
-    async def initialize(self):
-        """Initialize LLM, MCP session, tools, and compile LangGraph workflow."""
-        import aiohttp
-
-        self._http_session = aiohttp.ClientSession()
-
-        # Initialize MCP session
-        self._mcp_session = McpSession(MCP_SERVER_URL, self._http_session)
-        mcp_ok = await self._mcp_session.initialize()
-        if not mcp_ok:
-            logger.warning("MCP session init failed, tools will be unavailable")
-
-        # ---------- 1. LLM via ModelScope ----------
-        llm = ChatOpenAI(
-            base_url="https://api-inference.modelscope.cn/v1",
-            api_key=os.environ["MODELSCOPE_API_KEY"],
-            model="qwen-max",
-            temperature=0.3,
+        """Call a tool by name with arguments."""
+        result = await self._request(
+            {
+                "jsonrpc": "2.0",
+                "id": "3",
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            }
         )
+        if result is None:
+            return ""
+        parts = []
+        for c in result.get("content", []):
+            if isinstance(c, dict):
+                parts.append(c.get("text", json.dumps(c)))
+            else:
+                parts.append(str(c))
+        return "\n".join(parts)
 
-        # ---------- 2. Tools ----------
+
+class McpToolWrapper:
+    """Wraps an MCP tool definition into a callable LangChain tool.
+
+    Each invocation creates a fresh MCP session to avoid stale state.
+    """
+
+    def __init__(self, server_url: str, name: str, description: str) -> None:
+        self._server_url = server_url
+        self.name = name
+        self.description = description
+
+    async def arun(self, **kwargs: Any) -> str:
+        session = McpSession(self._server_url)
+        try:
+            await session.initialize()
+            return await session.call_tool(self.name, kwargs)
+        except Exception as e:
+            logger.warning(f"MCP tool '{self.name}' failed: {e}")
+            return f"Error: {e}"
+
+
+class ChatAgent:
+    """Main AI agent with LangGraph workflow."""
+
+    def __init__(self, mcp_url: str) -> None:
+        self._mcp_url = mcp_url
+        self._app: Any = None
+        self._memory = MemorySaver()
+
+    async def initialize(self) -> None:
+        """Initialize LLM, tools, and compile the LangGraph workflow."""
         tools = []
 
-        # 2a. Tavily web search
-        tavily_tool = TavilySearchResults(max_results=3)
-        tools.append(tavily_tool)
+        # ── Tavily (web search) ──────────────────────────────────
+        if config.has_tavily_key():
+            try:
+                from langchain_community.tools.tavily_search import TavilySearchResults
 
-        # 2b. MCP tools
-        if mcp_ok:
-            mcp_tools_list = await self._mcp_session.list_tools()
-            for t_def in mcp_tools_list:
-                tools.append(self._make_mcp_tool(t_def))
-                logger.info(f"  Loaded MCP tool: {t_def['name']}")
-            logger.info(f"Loaded {len(mcp_tools_list)} MCP tools")
+                tools.append(TavilySearchResults(max_results=3))
+                logger.info("Tavily web search enabled")
+            except Exception as e:
+                logger.warning(f"Failed to load Tavily: {e}")
         else:
-            logger.warning("No MCP tools loaded")
+            logger.warning("TAVILY_API_KEY not set, web search disabled")
+
+        # ── MCP tools ────────────────────────────────────────────
+        try:
+            init_session = McpSession(self._mcp_url)
+            await init_session.initialize()
+            tool_defs = await init_session.list_tools()
+
+            for td in tool_defs:
+                wrapper = McpToolWrapper(
+                    self._mcp_url, td["name"], td.get("description", "")
+                )
+
+                # Build LangChain-compatible tool
+                from langchain_core.tools import tool as lc_tool
+
+                @lc_tool
+                async def mcp_fn(_w=wrapper, **kwargs: Any) -> str:
+                    return await _w.arun(**kwargs)
+
+                mcp_fn.name = td["name"]
+                mcp_fn.description = td.get("description", "")
+                tools.append(mcp_fn)
+                logger.info(f"  Loaded MCP tool: {td['name']}")
+
+            logger.info(f"Loaded {len(tool_defs)} MCP tools")
+
+        except Exception as e:
+            logger.warning(f"Failed to load MCP tools: {e}")
+
+        # ── LLM ──────────────────────────────────────────────────
+        if config.has_model_api_key():
+            llm = ChatOpenAI(
+                base_url=config.MODELSCOPE_BASE_URL,
+                api_key=config.MODELSCOPE_API_KEY,
+                model=config.MODEL_NAME,
+                temperature=0.3,
+            )
+        else:
+            logger.warning("MODELSCOPE_API_KEY not set, using a dummy LLM")
+            from langchain_community.chat_models.fake import FakeMessagesListChatModel
+            from langchain_core.messages import AIMessage
+
+            llm = FakeMessagesListChatModel(responses=[AIMessage(content="I am a dummy AI assistant.")])
 
         llm_with_tools = llm.bind_tools(tools) if tools else llm
 
-        # ---------- 3. Build LangGraph ----------
-        def call_model(state: AgentState):
-            system_prompt = (
+        # ── Build Graph ──────────────────────────────────────────
+        def call_model(state: AgentState) -> dict:
+            system = (
                 f"你是一个集成在高性能集群聊天服务器中的AI智能助手。\n"
-                f"当前与你对话的用户ID是：{state['sender_id']}\n\n"
+                f"当前与你对话的用户ID是：{state['sender_id']}（{state.get('sender_name','')}）\n\n"
                 f"## 可用能力\n"
                 f"- 日常闲聊、问答\n"
                 f"- 使用 tavily_search_results_json 搜索最新资讯（联网搜索）\n"
-                f"- 调用后端MCP工具帮助用户查好友、查群组、查在线用户\n"
-                f"- 使用 chat_send_message 代替用户给他的好友发送消息（from_user_id 必须使用 {state['sender_id']}）\n\n"
+                f"- 调用后端MCP工具查好友、查群组、查在线用户、查看服务器统计\n"
+                f"- 使用 chat_send_message 帮用户给他的好友发消息（from_user_id 必须用 {state['sender_id']}）\n\n"
                 f"## 行为准则\n"
-                f"- 保持热情、专业、友好的语气\n"
-                f"- 调用工具后，用自然语言总结结果回复用户\n"
-                f"- 如果用户问你是谁，告诉用户你是ChatServer AI智能助手"
+                f"- 热情、专业、友好\n"
+                f"- 调用工具后用自然语言总结结果回复用户\n"
+                f"- 用户问你是谁，回答：ChatServer AI智能助手"
             )
-            messages = [SystemMessage(content=system_prompt)] + list(state["messages"])
-            response = llm_with_tools.invoke(messages)
+            msgs = [SystemMessage(content=system)] + list(state["messages"])
+            response = llm_with_tools.invoke(msgs)
             return {"messages": [response]}
 
         def should_continue(state: AgentState) -> str:
-            last_msg = state["messages"][-1]
-            if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+            last = state["messages"][-1]
+            if hasattr(last, "tool_calls") and last.tool_calls:
                 return "tools"
             return END
 
         workflow = StateGraph(AgentState)
         workflow.add_node("agent", call_model)
         workflow.add_node("tools", ToolNode(tools))
-
         workflow.add_edge(START, "agent")
-        workflow.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
+        workflow.add_conditional_edges(
+            "agent", should_continue, {"tools": "tools", END: END}
+        )
         workflow.add_edge("tools", "agent")
 
         self._app = workflow.compile(checkpointer=self._memory)
-        logger.info(f"LangGraph agent compiled with {len(tools)} tools")
+        logger.info(
+            f"LangGraph agent compiled with {len(tools)} tools"
+        )
 
-    def _make_mcp_tool(self, t_def: dict):
-        """Wrap an MCP tool definition into a LangChain @tool."""
-        from langchain_core.tools import tool as lc_tool
-
-        name = t_def["name"]
-        description = t_def.get("description", "")
-        mcp_session = self._mcp_session
-
-        @lc_tool
-        async def dynamic_tool(**kwargs) -> str:
-            """Call ChatServer MCP tool."""
-            if not mcp_session:
-                return "MCP session not available"
-            return await mcp_session.call_tool(name, kwargs)
-
-        dynamic_tool.name = name
-        dynamic_tool.description = description
-        return dynamic_tool
-
-    async def process_message(self, sender_id: int, sender_name: str, text: str) -> str:
-        """Process an incoming message through the LangGraph agent."""
+    async def process_message(
+        self, sender_id: int, sender_name: str, text: str
+    ) -> str:
+        """Process a user message and return the agent's reply."""
         if not self._app:
-            raise RuntimeError("Agent not initialized")
+            return "Agent not initialized."
 
-        config = {"configurable": {"thread_id": str(sender_id)}}
+        config_dict = {"configurable": {"thread_id": str(sender_id)}}
         state = {
             "messages": [HumanMessage(content=text)],
             "sender_id": sender_id,
             "sender_name": sender_name,
         }
 
-        result = await self._app.ainvoke(state, config)
-        final_response = result["messages"][-1]
-        if isinstance(final_response, AIMessage):
-            return final_response.content or ""
-        return str(final_response)
-
-    async def cleanup(self):
-        if self._http_session:
-            await self._http_session.close()
+        result = await self._app.ainvoke(state, config_dict)
+        final = result["messages"][-1]
+        if isinstance(final, AIMessage):
+            return final.content or ""
+        return str(final)
