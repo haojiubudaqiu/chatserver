@@ -64,6 +64,14 @@ html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont
   border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap;
 }
 
+.create-group-btn {
+  display: block; width: calc(100% - 32px); margin: 0 16px 6px;
+  padding: 8px; background: #07c160; color: white; border: none;
+  border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;
+  text-align: center; transition: background 0.15s;
+}
+.create-group-btn:hover { background: #06ad56; }
+
 .list { flex: 1; overflow-y: auto; }
 .list-item {
   padding: 10px 16px; cursor: pointer; display: flex; align-items: center; gap: 8px;

@@ -98,6 +98,16 @@ function App() {
     wsRef.current = ws
   }, [])
 
+  const api = useCallback(async (path: string, body: any) => {
+    const res = await fetch(`${BRIDGE}${path}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.detail || 'Request failed')
+    return data
+  }, [])
+
   useEffect(() => {
     if (!selectedChat || !user) return
     const chatKey = `${selectedChat.type}-${selectedChat.id}`
@@ -129,23 +139,12 @@ function App() {
         }
       } catch (e: any) {
         console.error('Failed to load history', e)
-        // Remove from Set so we can retry later if needed
         fetchedChatsRef.current.delete(chatKey)
       }
     }
 
     loadHistory()
   }, [selectedChat, user, api])
-
-  const api = useCallback(async (path: string, body: any) => {
-    const res = await fetch(`${BRIDGE}${path}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.detail || 'Request failed')
-    return data
-  }, [])
 
   const handleRegister = async () => {
     try {
@@ -320,8 +319,8 @@ function App() {
           <div className="add-friend-row">
             <input className="small-input" placeholder="Group name" value={createGroupName} onChange={e => setCreateGroupName(e.target.value)} />
             <input className="small-input" placeholder="Desc" value={createGroupDesc} onChange={e => setCreateGroupDesc(e.target.value)} />
-            <button className="small-btn" onClick={handleCreateGroup}>Create</button>
           </div>
+          <button className="create-group-btn" onClick={handleCreateGroup}>Create Group</button>
           <div className="add-friend-row">
             <input className="small-input" placeholder="Join group ID" value={joinGroupId} onChange={e => setJoinGroupId(e.target.value)} />
             <button className="small-btn" onClick={handleJoinGroup}>Join</button>
