@@ -8,6 +8,7 @@ public:
     UserModel();
 
     bool insert(User &user);
+    bool insertWithId(User &user);
     User query(int id);
     User query(int id, bool forceMaster);
     User queryByName(const string& name);

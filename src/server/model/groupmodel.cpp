@@ -129,6 +129,35 @@ vector<int> GroupModel::queryGroupUsers(int userid, int groupid)
     return idVec;
 }
 
+Group GroupModel::queryGroupByName(const string& groupname, bool forceMaster)
+{
+    char sql[1024] = {0};
+    char name_escaped[256];
+    
+    ConnectionGuard conn(DatabaseRouter::instance()->routeQuery(forceMaster));
+    if (!conn) {
+        return Group();
+    }
+    
+    mysql_real_escape_string(conn->getConnection(), name_escaped, groupname.c_str(), groupname.length());
+    sprintf(sql, "select id, groupname, groupdesc from allgroup where groupname = '%s'", name_escaped);
+
+    Group group;
+    MYSQL_RES *res = conn->query(sql);
+    if (res != nullptr)
+    {
+        MYSQL_ROW row = mysql_fetch_row(res);
+        if (row != nullptr)
+        {
+            group.setId(atoi(row[0]));
+            group.setName(row[1]);
+            group.setDesc(row[2]);
+        }
+        mysql_free_result(res);
+    }
+    return group;
+}
+
 Group GroupModel::queryGroup(int groupid, bool forceMaster)
 {
     char sql[1024] = {0};

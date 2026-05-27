@@ -16,6 +16,7 @@ public:
     vector<Group> queryGroups(int userid);
     vector<int> queryGroupUsers(int userid, int groupid);
     Group queryGroup(int groupid, bool forceMaster = false);
+    Group queryGroupByName(const string& groupname, bool forceMaster = false);
 };
 
 #endif

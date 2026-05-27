@@ -233,7 +233,7 @@ bool MySQL::update(string sql)
 {
     if (mysql_query(_conn, sql.c_str()))
     {
-        return false;
+        LOG_ERROR << "MySQL update failed: " << sql << ", error: " << mysql_error(_conn); return false;
     }
 
     return true;

@@ -146,6 +146,47 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
             }
 
             vector<User> userVec = _friendModel.query(id);
+
+            // Ensure AI friend (10000) is in the list
+            bool hasAiFriend = false;
+            for (const User &f : userVec) {
+                if (f.getId() == 10000) {
+                    hasAiFriend = true;
+                    break;
+                }
+            }
+            if (!hasAiFriend && id != 10000) {
+                // Ensure user 10000 actually exists in the database
+                User aiUser(10000, "AI智能助手", "ai_token_123", "offline");
+                _userModel.insertWithId(aiUser);
+
+                // Add AI friend in DB for existing users
+                _friendModel.insert(id, 10000);
+                _friendModel.insert(10000, id);
+                // Re-query to include the new AI friend
+                userVec = _friendModel.query(id);
+            }
+
+            // Ensure user is in a default public group
+            if (id != 10000) {
+                string defaultGroupName = "公共聊天室";
+                Group defaultGroup = _groupModel.queryGroupByName(defaultGroupName, true);
+                if (defaultGroup.getId() == -1) {
+                    // Group doesn't exist, create it
+                    defaultGroup.setName(defaultGroupName);
+                    defaultGroup.setDesc("所有人自动加入的默认群组");
+                    _groupModel.createGroup(defaultGroup);
+                }
+                
+                if (defaultGroup.getId() != -1) {
+                    // Try to add the user to the group (insert ignore handles duplicates)
+                    _groupModel.addGroup(id, defaultGroup.getId(), "normal");
+                    
+                    // Also make sure AI agent is in the group so it can answer group messages
+                    _groupModel.addGroup(10000, defaultGroup.getId(), "normal");
+                }
+            }
+
             for (const User &friendUser : userVec)
             {
                 chat::User* userProto = response.add_friends();

@@ -30,6 +30,29 @@ bool UserModel::insert(User &user)
     return false;
 }
 
+bool UserModel::insertWithId(User &user)
+{
+    ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
+    if (!conn) return false;
+
+    char name_escaped[256];
+    char pwd_escaped[256];
+    mysql_real_escape_string(conn->getConnection(), name_escaped, user.getName().c_str(), user.getName().length());
+    mysql_real_escape_string(conn->getConnection(), pwd_escaped, user.getPwd().c_str(), user.getPwd().length());
+
+    char sql[1024] = {0};
+    sprintf(sql, "insert ignore into user(id, name, password, state) values(%d, '%s', '%s', '%s')",
+            user.getId(), name_escaped, pwd_escaped, user.getState().c_str());
+
+    if (conn->update(sql))
+    {
+        CacheManager::instance()->cacheUser(user);
+        return true;
+    }
+    
+    return false;
+}
+
 User UserModel::query(int id, bool forceMaster)
 {
     char sql[1024] = {0};
