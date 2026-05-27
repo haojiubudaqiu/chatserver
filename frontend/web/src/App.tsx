@@ -64,6 +64,7 @@ function App() {
   const msgEndRef = useRef<HTMLDivElement>(null)
   const notifTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const wsReconnectRef = useRef(true)
+  const fetchedChatsRef = useRef<Set<string>>(new Set())
 
   const showNotif = useCallback((msg: string) => {
     setNotif(msg)
@@ -97,7 +98,46 @@ function App() {
     wsRef.current = ws
   }, [])
 
-  const api = async (path: string, body: any) => {
+  useEffect(() => {
+    if (!selectedChat || !user) return
+    const chatKey = `${selectedChat.type}-${selectedChat.id}`
+    if (fetchedChatsRef.current.has(chatKey)) return
+
+    fetchedChatsRef.current.add(chatKey)
+
+    const loadHistory = async () => {
+      try {
+        const data = await api('/api/chat_history', {
+          id: user.id,
+          peer_id: selectedChat.id,
+          chat_type: selectedChat.type === 'friend' ? 1 : 2,
+          limit: 100
+        })
+        if (data.messages && data.messages.length > 0) {
+          setMessages(prev => {
+            const existingKeys = new Set(prev.map(m => `${m.type}-${m.fromid}-${m.toid || ''}-${m.groupid || ''}-${m.time}-${m.message}`))
+            const newMessages = data.messages
+              .map((m: ChatMessage) => ({ ...m, name: m.name || `User#${m.fromid}` }))
+              .filter((m: ChatMessage) => {
+                const key = `${m.type}-${m.fromid}-${m.toid || ''}-${m.groupid || ''}-${m.time}-${m.message}`
+                if (existingKeys.has(key)) return false
+                existingKeys.add(key)
+                return true
+              })
+            return [...prev, ...newMessages].sort((a, b) => a.time - b.time)
+          })
+        }
+      } catch (e: any) {
+        console.error('Failed to load history', e)
+        // Remove from Set so we can retry later if needed
+        fetchedChatsRef.current.delete(chatKey)
+      }
+    }
+
+    loadHistory()
+  }, [selectedChat, user, api])
+
+  const api = useCallback(async (path: string, body: any) => {
     const res = await fetch(`${BRIDGE}${path}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -105,7 +145,7 @@ function App() {
     const data = await res.json()
     if (!res.ok) throw new Error(data.detail || 'Request failed')
     return data
-  }
+  }, [])
 
   const handleRegister = async () => {
     try {
@@ -148,6 +188,7 @@ function App() {
       setGroups([])
       setMessages([])
       setSelectedChat(null)
+      fetchedChatsRef.current.clear()
       setPage('login')
     }
   }

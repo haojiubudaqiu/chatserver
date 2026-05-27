@@ -49,7 +49,7 @@ echo "=== 4. A 发送私聊消息 ==="
 S1=$(curl -s -X POST $SERVER/api/send_message -H "Content-Type: application/json" \
   -d "{\"id\": $ID_A, \"toid\": $ID_B, \"message\": \"Hello from history test\"}")
 echo "$S1" | grep -q '"err_num":0' && pass "A 发送消息 1" || fail "A 发送消息 1 失败"
-sleep 0.5
+sleep 1.0
 S2=$(curl -s -X POST $SERVER/api/send_message -H "Content-Type: application/json" \
   -d "{\"id\": $ID_A, \"toid\": $ID_B, \"message\": \"Second message for history\"}")
 echo "$S2" | grep -q '"err_num":0' && pass "A 发送消息 2" || fail "A 发送消息 2 失败"
@@ -57,6 +57,7 @@ echo "$S2" | grep -q '"err_num":0' && pass "A 发送消息 2" || fail "A 发送�
 # ---------- 5. Query private chat history ----------
 echo ""
 echo "=== 5. 查询私聊历史 ==="
+sleep 0.5
 HIST=$(curl -s -X POST $SERVER/api/chat_history -H "Content-Type: application/json" \
   -d "{\"id\": $ID_A, \"peer_id\": $ID_B, \"chat_type\": 1, \"limit\": 50}")
 ERR=$(echo "$HIST" | python3 -c "import sys,json; print(json.load(sys.stdin).get('err_num','-1'))")
@@ -104,12 +105,12 @@ GID=$(echo "$GRP" | python3 -c "import sys,json; print(json.load(sys.stdin).get(
 GS1=$(curl -s -X POST $SERVER/api/send_group_message -H "Content-Type: application/json" \
   -d "{\"id\": $ID_A, \"groupid\": $GID, \"message\": \"Group message 1\"}")
 echo "$GS1" | grep -q '"err_num":0' && pass "A 发送群消息 1" || fail "A 发送群消息 1 失败"
-sleep 0.5
+sleep 1.0
 GS2=$(curl -s -X POST $SERVER/api/send_group_message -H "Content-Type: application/json" \
   -d "{\"id\": $ID_A, \"groupid\": $GID, \"message\": \"Group message 2\"}")
 echo "$GS2" | grep -q '"err_num":0' && pass "A 发送群消息 2" || fail "A 发送群消息 2 失败"
 
-sleep 0.5
+sleep 1.0
 GRP_HIST=$(curl -s -X POST $SERVER/api/chat_history -H "Content-Type: application/json" \
   -d "{\"id\": $ID_A, \"peer_id\": $GID, \"chat_type\": 2, \"limit\": 50}")
 ERR_G=$(echo "$GRP_HIST" | python3 -c "import sys,json; print(json.load(sys.stdin).get('err_num','-1'))")

@@ -79,6 +79,11 @@ int main(int argc, char **argv)
         LOG_INFO << "Reset all users to offline state on server start";
     }
 
+    // 定期清理过期的聊天历史记录 (每小时执行一次)
+    loop.runEvery(3600.0, [](){
+        ChatService::instance()->cleanupHistory();
+    });
+
     server.start();
     loop.loop();
 

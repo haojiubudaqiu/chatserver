@@ -2,6 +2,7 @@
 #include "connection_guard.h"
 #include "database_router.h"
 #include <cstring>
+#include <muduo/base/Logging.h>
 
 bool ChatHistoryModel::insert(int msgType, int fromId, int toId, const string& content, int64_t msgTime)
 {
@@ -107,4 +108,19 @@ vector<ChatRecord> ChatHistoryModel::queryGroupChat(int groupid, int limit, int6
         mysql_free_result(res);
     }
     return vec;
+}
+
+bool ChatHistoryModel::cleanup(int64_t beforeTime)
+{
+    ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
+    if (!conn) return false;
+
+    char sql[256] = {0};
+    snprintf(sql, sizeof(sql), "delete from chat_message where msg_time < %lld", (long long)beforeTime);
+    
+    bool ret = conn->update(sql);
+    if (ret) {
+        LOG_INFO << "Cleaned up chat_message records older than " << beforeTime;
+    }
+    return ret;
 }

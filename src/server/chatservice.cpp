@@ -82,6 +82,12 @@ void ChatService::reset()
     _userModel.resetState();
 }
 
+void ChatService::cleanupHistory()
+{
+    int64_t beforeTime = time(nullptr) - (30 * 24 * 60 * 60); // 30 days ago in seconds
+    _chatHistoryModel.cleanup(beforeTime);
+}
+
 void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timestamp time)
 {
     chat::LoginRequest loginReq;

@@ -34,6 +34,7 @@ public:
     void loginout(const TcpConnectionPtr &conn, const string &data, Timestamp time);
     void clientCloseException(const TcpConnectionPtr &conn);
     void reset();
+    void cleanupHistory(); // 定期清理过期历史消息
     void handleKafkaMessage(const string& topic, const string& message);
     void handleKafkaPrivateMessage(const string& message);
     void handleKafkaGroupMessage(const string& message);
