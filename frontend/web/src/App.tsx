@@ -233,13 +233,13 @@ function App() {
         await api('/api/send_message', { id: user.id, toid: selectedChat.id, message: inputText.trim() })
         setMessages(prev => [...prev, {
           type: 'chat', fromid: user.id, toid: selectedChat.id,
-          time: Date.now(), message: inputText.trim(), name: user.name,
+          time: Date.now() * 1000, message: inputText.trim(), name: user.name,
         }])
       } else {
         await api('/api/send_group_message', { id: user.id, groupid: selectedChat.id, message: inputText.trim() })
         setMessages(prev => [...prev, {
           type: 'groupchat', fromid: user.id, groupid: selectedChat.id,
-          time: Date.now(), message: inputText.trim(), name: user.name,
+          time: Date.now() * 1000, message: inputText.trim(), name: user.name,
         }])
       }
       setInputText('')

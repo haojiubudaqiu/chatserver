@@ -11,6 +11,8 @@ Workflow:
 import aiohttp
 import json
 import logging
+import openai
+import re
 from typing import Any, Optional, Sequence
 from uuid import uuid4
 
@@ -183,6 +185,24 @@ def _make_dummy_llm():
     return DummyChatModel()
 
 
+def _strip_think_tags(text: str) -> str:
+    return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+
+
+def _strip_markdown(text: str) -> str:
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'__(.+?)__', r'\1', text)
+    text = re.sub(r'\*(.+?)\*', r'\1', text)
+    text = re.sub(r'`(.+?)`', r'\1', text)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
+    text = re.sub(r'\[(.+?)\]\(.*?\)', r'\1', text)
+    text = re.sub(r'^\s*[-*+]\s+', '  \u2022 ', text, flags=re.MULTILINE)
+    text = re.sub(r'^\s*\d+\.\s+', '  ', text, flags=re.MULTILINE)
+    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
 def _mcp_schema_to_pydantic(name: str, schema: dict) -> type[BaseModel]:
     """Convert MCP inputSchema (JSON Schema) to a Pydantic model for StructuredTool."""
     fields = {}
@@ -215,6 +235,19 @@ class ChatAgent:
         self._mcp_url = mcp_url
         self._app: Any = None
         self._memory = MemorySaver()
+        # Models to try in order; rotates on 429 (quota exceeded)
+        self._model_names = [config.MODEL_NAME] + config.FALLBACK_MODELS
+        self._model_idx = 0
+
+    def _create_llm(self) -> ChatOpenAI:
+        name = self._model_names[self._model_idx]
+        logger.info(f"Creating LLM with model: {name}")
+        return ChatOpenAI(
+            base_url=config.MODELSCOPE_BASE_URL,
+            api_key=config.MODELSCOPE_API_KEY,
+            model=name,
+            temperature=0.3,
+        )
 
     async def initialize(self) -> None:
         tools = []
@@ -266,26 +299,25 @@ class ChatAgent:
             logger.warning(f"Failed to load MCP tools: {e}")
 
         if config.has_model_api_key():
-            llm = ChatOpenAI(
-                base_url=config.MODELSCOPE_BASE_URL,
-                api_key=config.MODELSCOPE_API_KEY,
-                model=config.MODEL_NAME,
-                temperature=0.3,
-            )
+            llm_with_tools = None
+            # Try models in order; if bind_tools fails, cycle to next
+            for _ in range(len(self._model_names)):
+                llm = self._create_llm()
+                try:
+                    llm_with_tools = llm.bind_tools(tools)
+                    break
+                except NotImplementedError:
+                    logger.warning(f"Model {self._model_names[self._model_idx]} does not support tool binding")
+                    self._model_idx = (self._model_idx + 1) % len(self._model_names)
+            if llm_with_tools is None:
+                logger.warning("No LLM model supports tool binding, running without tools")
+                llm_with_tools = self._create_llm()
         else:
             logger.warning("MODELSCOPE_API_KEY not set, using a dummy LLM")
-            llm = _make_dummy_llm()
-
-        if tools:
-            try:
-                llm_with_tools = llm.bind_tools(tools)
-            except NotImplementedError:
-                logger.warning("LLM does not support tool binding, running without tools")
-                llm_with_tools = llm
-        else:
-            llm_with_tools = llm
+            llm_with_tools = _make_dummy_llm()
 
         def call_model(state: AgentState) -> dict:
+            nonlocal llm_with_tools
             system = (
                 f"你是一个集成在高性能集群聊天服务器中的AI智能助手。\n"
                 f"当前与你对话的用户ID是：{state['sender_id']}（{state.get('sender_name','')}）\n\n"
@@ -303,11 +335,25 @@ class ChatAgent:
             for attempt in range(3):
                 try:
                     response = llm_with_tools.invoke(msgs)
-                    # Some ModelScope models return null `choices` on transient errors
+                    # Some models return null `choices` on transient errors
                     if hasattr(response, "content") and response.content is None:
                         logger.warning(f"LLM returned null content (attempt {attempt+1}), retrying...")
                         continue
                     return {"messages": [response]}
+                except openai.RateLimitError:
+                    logger.warning(f"Model {self._model_names[self._model_idx]} quota exceeded")
+                    # Rotate to next available model
+                    for _ in range(len(self._model_names)):
+                        self._model_idx = (self._model_idx + 1) % len(self._model_names)
+                        try:
+                            llm = self._create_llm()
+                            llm_with_tools = llm.bind_tools(tools)
+                            logger.info(f"Switched to model: {self._model_names[self._model_idx]}")
+                            break
+                        except NotImplementedError:
+                            continue
+                    # Retry with new model
+                    continue
                 except Exception as e:
                     logger.warning(f"LLM call failed (attempt {attempt+1}): {e}")
                     if attempt < 2:
@@ -353,7 +399,12 @@ class ChatAgent:
 
         for msg in reversed(result["messages"]):
             if isinstance(msg, AIMessage) and msg.content:
-                logger.info(f"Reply to {sender_name}: {msg.content[:80]}")
+                cleaned = _strip_think_tags(msg.content)
+                cleaned = _strip_markdown(cleaned)
+                if cleaned:
+                    logger.info(f"Reply to {sender_name}: {cleaned[:80]}")
+                    return cleaned
+                logger.info(f"Reply to {sender_name} (after strip): {msg.content[:80]}")
                 return msg.content
 
         final = result["messages"][-1]

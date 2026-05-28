@@ -43,3 +43,6 @@ frontend/web/node_modules/
 frontend/web/dist/
 frontend/bridge/__pycache__/
 frontend/bridge/proto/__pycache__/
+agent_venv/
+*.swp
+*.swo

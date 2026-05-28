@@ -15,7 +15,19 @@ MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://127.0.0.1:8888/mcp")
 # ── ModelScope (LLM) ───────────────────────────────────────────
 MODELSCOPE_API_KEY = os.environ.get("MODELSCOPE_API_KEY", "")
 MODELSCOPE_BASE_URL = os.environ.get("MODELSCOPE_BASE_URL", "https://api-inference.modelscope.cn/v1")
-MODEL_NAME = os.environ.get("MODEL_NAME", "ZhipuAI/GLM-5")
+
+# Primary model (first tried). Can be overridden via MODEL_NAME env var.
+MODEL_NAME = os.environ.get("MODEL_NAME", "MiniMax/MiniMax-M1-80k")
+
+# Fallback models tried in order when primary model hits rate limits.
+# See docs/AGENT_USER_GUIDE.md for recommended models:
+#   - MiniMax/MiniMax-M1-80k: fastest, good tool support (our new default)
+#   - ZhipuAI/GLM-5: balanced, good tool support (was default, often quota-full)
+#   - deepseek-ai/DeepSeek-R1-0528: strong reasoning, slower
+FALLBACK_MODELS = [
+    "ZhipuAI/GLM-5",
+    "deepseek-ai/DeepSeek-R1-0528",
+]
 
 # ── Tavily (Web Search) ────────────────────────────────────────
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")

@@ -48,7 +48,7 @@ def pack_message(msg) -> bytes:
 def make_register_request(name: str, password: str) -> bytes:
     req = chat.RegisterRequest()
     req.base.msgid = chat.REG_MSG
-    req.base.time = int(time.time())
+    req.base.time = int(time.time() * 1000000)
     req.name = name
     req.password = password
     return pack_message(req)
@@ -58,7 +58,7 @@ def make_login_request(userid: int, password: str) -> bytes:
     req = chat.LoginRequest()
     req.base.msgid = chat.LOGIN_MSG
     req.base.fromid = userid
-    req.base.time = int(time.time())
+    req.base.time = int(time.time() * 1000000)
     req.id = userid
     req.password = password
     return pack_message(req)
@@ -68,7 +68,7 @@ def make_logout_request(userid: int) -> bytes:
     req = chat.LogoutRequest()
     req.base.msgid = chat.LOGINOUT_MSG
     req.base.fromid = userid
-    req.base.time = int(time.time())
+    req.base.time = int(time.time() * 1000000)
     return pack_message(req)
 
 
@@ -76,7 +76,7 @@ def make_add_friend_request(userid: int, friendid: int) -> bytes:
     req = chat.AddFriendRequest()
     req.base.msgid = chat.ADD_FRIEND_MSG
     req.base.fromid = userid
-    req.base.time = int(time.time())
+    req.base.time = int(time.time() * 1000000)
     req.friendid = friendid
     return pack_message(req)
 
@@ -86,7 +86,7 @@ def make_one_chat_message(fromid: int, toid: int, text: str) -> bytes:
     req.base.msgid = chat.ONE_CHAT_MSG
     req.base.fromid = fromid
     req.base.toid = toid
-    req.base.time = int(time.time())
+    req.base.time = int(time.time() * 1000000)
     req.message = text
     return pack_message(req)
 
@@ -95,7 +95,7 @@ def make_create_group_request(userid: int, name: str, desc: str) -> bytes:
     req = chat.CreateGroupRequest()
     req.base.msgid = chat.CREATE_GROUP_MSG
     req.base.fromid = userid
-    req.base.time = int(time.time())
+    req.base.time = int(time.time() * 1000000)
     req.groupname = name
     req.groupdesc = desc
     return pack_message(req)
@@ -105,7 +105,7 @@ def make_add_group_request(userid: int, groupid: int) -> bytes:
     req = chat.AddGroupRequest()
     req.base.msgid = chat.ADD_GROUP_MSG
     req.base.fromid = userid
-    req.base.time = int(time.time())
+    req.base.time = int(time.time() * 1000000)
     req.groupid = groupid
     return pack_message(req)
 
@@ -114,7 +114,7 @@ def make_chat_history_request(userid: int, peer_id: int, chat_type: int, limit: 
     req = chat.GetChatHistoryRequest()
     req.base.msgid = chat.GET_CHAT_HISTORY_MSG
     req.base.fromid = userid
-    req.base.time = int(time.time())
+    req.base.time = int(time.time() * 1000000)
     req.peer_id = peer_id
     req.chat_type = chat_type
     req.limit = limit
@@ -127,7 +127,7 @@ def make_group_chat_message(userid: int, groupid: int, text: str) -> bytes:
     req.base.msgid = chat.GROUP_CHAT_MSG
     req.base.fromid = userid
     req.base.toid = groupid
-    req.base.time = int(time.time())
+    req.base.time = int(time.time() * 1000000)
     req.groupid = groupid
     req.message = text
     return pack_message(req)
