@@ -189,19 +189,7 @@ def _strip_think_tags(text: str) -> str:
     return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
 
 
-def _strip_markdown(text: str) -> str:
-    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-    text = re.sub(r'__(.+?)__', r'\1', text)
-    text = re.sub(r'\*(.+?)\*', r'\1', text)
-    text = re.sub(r'`(.+?)`', r'\1', text)
-    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
-    text = re.sub(r'\[(.+?)\]\(.*?\)', r'\1', text)
-    text = re.sub(r'^\s*[-*+]\s+', '  \u2022 ', text, flags=re.MULTILINE)
-    text = re.sub(r'^\s*\d+\.\s+', '  ', text, flags=re.MULTILINE)
-    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    return text.strip()
+
 
 def _mcp_schema_to_pydantic(name: str, schema: dict) -> type[BaseModel]:
     """Convert MCP inputSchema (JSON Schema) to a Pydantic model for StructuredTool."""
@@ -400,7 +388,6 @@ class ChatAgent:
         for msg in reversed(result["messages"]):
             if isinstance(msg, AIMessage) and msg.content:
                 cleaned = _strip_think_tags(msg.content)
-                cleaned = _strip_markdown(cleaned)
                 if cleaned:
                     logger.info(f"Reply to {sender_name}: {cleaned[:80]}")
                     return cleaned

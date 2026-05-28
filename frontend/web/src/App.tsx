@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import './App.css'
 
 const BRIDGE = import.meta.env.VITE_BRIDGE_URL || 'http://127.0.0.1:8000'
@@ -348,7 +350,9 @@ function App() {
               {chatMessages.map((m, i) => (
                 <div key={i} className={`message ${m.fromid === user?.id ? 'self' : 'other'}`}>
                   <div className="message-sender">{m.name || friendName(m.fromid)}</div>
-                  <div className="bubble">{m.message}</div>
+                  <div className="bubble">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.message}</ReactMarkdown>
+                  </div>
                   <div className="message-time">{new Date(m.time > 1e12 ? m.time / 1e6 : m.time).toLocaleTimeString()}</div>
                 </div>
               ))}

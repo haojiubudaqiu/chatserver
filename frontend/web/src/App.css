@@ -119,3 +119,36 @@ html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont
   border-radius: 6px; font-size: 14px; cursor: pointer;
 }
 .send-btn:hover { background: #06ad56; }
+
+/* Markdown rendering inside chat bubbles */
+.bubble p { margin: 0 0 6px; }
+.bubble p:last-child { margin-bottom: 0; }
+.bubble table { border-collapse: collapse; margin: 6px 0; width: 100%; font-size: 13px; }
+.bubble th, .bubble td {
+  border: 1px solid #ccc; padding: 4px 8px; text-align: left;
+}
+.bubble th { background: #f0f0f0; font-weight: 600; }
+.bubble ul, .bubble ol { margin: 4px 0; padding-left: 20px; }
+.bubble li { margin: 2px 0; }
+.bubble hr { border: none; border-top: 1px solid #ddd; margin: 8px 0; }
+.bubble strong { font-weight: 700; }
+.bubble code {
+  background: #f0f0f0; padding: 1px 5px; border-radius: 3px;
+  font-size: 13px; font-family: 'Consolas', 'Monaco', monospace;
+}
+.bubble blockquote {
+  margin: 6px 0; padding: 4px 12px; border-left: 3px solid #07c160;
+  color: #555; font-style: italic;
+}
+.bubble a { color: #07c160; text-decoration: underline; }
+.bubble img { max-width: 100%; border-radius: 4px; margin: 4px 0; }
+.bubble h1, .bubble h2, .bubble h3, .bubble h4 { margin: 8px 0 4px; font-weight: 600; }
+.bubble h2 { font-size: 16px; }
+.bubble h3 { font-size: 15px; }
+.bubble h4 { font-size: 14px; }
+
+/* Dark bubble (self) markdown overrides */
+.message.self .bubble th { background: #7ddb56; }
+.message.self .bubble td { border-color: #7ddb56; }
+.message.self .bubble code { background: #7ddb56; }
+.message.self .bubble blockquote { border-left-color: #3a8c2f; color: #333; }
