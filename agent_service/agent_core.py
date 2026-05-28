@@ -21,6 +21,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 from typing import TypedDict, Annotated
+from pydantic import BaseModel, Field, create_model
 
 import config
 
@@ -152,6 +153,7 @@ class McpToolWrapper:
     async def arun(self, **kwargs: Any) -> str:
         try:
             await self.ensure_session()
+            logger.info(f"MCP tool call '{self.name}': {json.dumps(kwargs, ensure_ascii=False)}")
             return await self._session.call_tool(self.name, kwargs)
         except Exception as e:
             logger.warning(f"MCP tool '{self.name}' failed: {e}")
@@ -179,6 +181,33 @@ def _make_dummy_llm():
             return "dummy"
 
     return DummyChatModel()
+
+
+def _mcp_schema_to_pydantic(name: str, schema: dict) -> type[BaseModel]:
+    """Convert MCP inputSchema (JSON Schema) to a Pydantic model for StructuredTool."""
+    fields = {}
+    props = schema.get("properties", {})
+    required = set(schema.get("required", []))
+
+    json_to_python = {
+        "string": str,
+        "number": int,
+        "integer": int,
+        "boolean": bool,
+        "array": list,
+        "object": dict,
+    }
+
+    for field_name, prop in props.items():
+        js_type = prop.get("type", "string")
+        py_type = json_to_python.get(js_type, str)
+        description = prop.get("description", "")
+        if field_name in required:
+            fields[field_name] = (py_type, Field(..., description=description))
+        else:
+            fields[field_name] = (Optional[py_type], Field(None, description=description))
+
+    return create_model(f"{name}_args", **fields)
 
 
 class ChatAgent:
@@ -217,10 +246,15 @@ class ChatAgent:
                         return await w.arun(**kwargs)
                     return mcp_fn
 
+                args_schema = _mcp_schema_to_pydantic(
+                    td["name"], td.get("inputSchema", {})
+                )
+
                 mcp_tool = StructuredTool.from_function(
                     coroutine=make_arun_wrapper(wrapper),
                     name=td["name"],
                     description=td.get("description", "MCP Tool"),
+                    args_schema=args_schema,
                 )
 
                 tools.append(mcp_tool)
