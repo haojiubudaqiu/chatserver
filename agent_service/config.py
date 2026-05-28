@@ -15,7 +15,7 @@ MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://127.0.0.1:8888/mcp")
 # ── ModelScope (LLM) ───────────────────────────────────────────
 MODELSCOPE_API_KEY = os.environ.get("MODELSCOPE_API_KEY", "")
 MODELSCOPE_BASE_URL = os.environ.get("MODELSCOPE_BASE_URL", "https://api-inference.modelscope.cn/v1")
-MODEL_NAME = os.environ.get("MODEL_NAME", "qwen-max")
+MODEL_NAME = os.environ.get("MODEL_NAME", "ZhipuAI/GLM-5")
 
 # ── Tavily (Web Search) ────────────────────────────────────────
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")

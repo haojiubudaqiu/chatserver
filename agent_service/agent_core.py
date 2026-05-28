@@ -34,41 +34,39 @@ class AgentState(TypedDict):
 
 
 class McpSession:
-    """Short-lived MCP session for a single tool call."""
+    """Reusable MCP session using a persistent aiohttp session."""
 
     def __init__(self, server_url: str) -> None:
         self._server_url = server_url
         self._session_id: Optional[str] = None
+        self._http = aiohttp.ClientSession()
 
     async def _request(self, body: dict, timeout: int = 10) -> Any:
-        import aiohttp
-
         headers = {}
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self._server_url,
-                json=body,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=timeout),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        async with self._http.post(
+            self._server_url,
+            json=body,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
-                if self._session_id is None:
-                    sid = resp.headers.get("Mcp-Session-Id")
-                    if sid:
-                        self._session_id = sid
+            if self._session_id is None:
+                sid = resp.headers.get("Mcp-Session-Id")
+                if sid:
+                    self._session_id = sid
 
-                if "error" in data:
-                    raise RuntimeError(
-                        f"MCP error (code={data['error'].get('code')}): "
-                        f"{data['error'].get('message')}"
-                    )
+            if "error" in data:
+                raise RuntimeError(
+                    f"MCP error (code={data['error'].get('code')}): "
+                    f"{data['error'].get('message')}"
+                )
 
-                return data.get("result")
+            return data.get("result")
 
     async def initialize(self) -> None:
         result = await self._request(
@@ -86,13 +84,12 @@ class McpSession:
         if result is None:
             raise RuntimeError("MCP initialize returned no result")
 
-        async with aiohttp.ClientSession() as session:
-            await session.post(
-                self._server_url,
-                json={"jsonrpc": "2.0", "method": "notifications/initialized"},
-                headers={"Mcp-Session-Id": self._session_id},
-                timeout=aiohttp.ClientTimeout(total=5),
-            )
+        await self._http.post(
+            self._server_url,
+            json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+            headers={"Mcp-Session-Id": self._session_id},
+            timeout=aiohttp.ClientTimeout(total=5),
+        )
 
     async def list_tools(self) -> list:
         result = await self._request(
@@ -130,14 +127,19 @@ class McpSession:
 class McpToolWrapper:
     def __init__(self, server_url: str, name: str, description: str) -> None:
         self._server_url = server_url
+        self._session: Optional[McpSession] = None
         self.name = name
         self.description = description
 
+    async def ensure_session(self) -> None:
+        if self._session is None:
+            self._session = McpSession(self._server_url)
+            await self._session.initialize()
+
     async def arun(self, **kwargs: Any) -> str:
-        session = McpSession(self._server_url)
         try:
-            await session.initialize()
-            return await session.call_tool(self.name, kwargs)
+            await self.ensure_session()
+            return await self._session.call_tool(self.name, kwargs)
         except Exception as e:
             logger.warning(f"MCP tool '{self.name}' failed: {e}")
             return f"Error: {e}"
@@ -278,7 +280,7 @@ class ChatAgent:
         if not self._app:
             return "Agent not initialized."
 
-        config_dict = {"configurable": {"thread_id": str(sender_id)}}
+        config_dict = {"configurable": {"thread_id": str(sender_id)}, "recursion_limit": 12}
         state = {
             "messages": [HumanMessage(content=text)],
             "sender_id": sender_id,

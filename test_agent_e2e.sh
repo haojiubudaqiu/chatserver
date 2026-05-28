@@ -89,7 +89,8 @@ assert data.get('err_num') == 0, f'发送失败: {data}'
 
 echo ""
 echo "=== 4. 等待 AI 回复 ==="
-sleep 5
+echo "  (等待 20 秒让真实 LLM 生成回复...)"
+sleep 20
 HISTORY=$(curl -s -X POST "$BRIDGE/api/chat_history" -H "Content-Type: application/json" -d "{\"id\":$A_ID,\"peer_id\":10000,\"chat_type\":1,\"limit\":10}")
 echo "$HISTORY" | python3 -c "
 import sys, json

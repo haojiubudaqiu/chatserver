@@ -11,7 +11,10 @@ fi
 
 echo "Stopping existing ChatServer and Agent instances..."
 killall -9 ChatServer 2>/dev/null || true
-pkill -f "agent_service/main.py" 2>/dev/null || true
+# Kill ALL agent_service/main.py processes (including stale ones)
+for pid in $(ps aux | grep "agent_service/main.py" | grep -v grep | awk '{print $2}'); do
+    kill "$pid" 2>/dev/null || true
+done
 sleep 1
 
 if [ "$KILL_ONLY" = true ]; then
@@ -21,6 +24,11 @@ fi
 
 export KAFKA_HOST=localhost
 export KAFKA_PORT=9093
+
+# AI Agent API Keys (set your own in environment to override)
+export MODELSCOPE_API_KEY="${MODELSCOPE_API_KEY:-ms-5a8fdbd8-8b94-40b4-94ed-6015c5adb297}"
+export MODELSCOPE_BASE_URL="${MODELSCOPE_BASE_URL:-https://api-inference.modelscope.cn/v1}"
+export TAVILY_API_KEY="${TAVILY_API_KEY:-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}"
 
 echo "Starting ChatServer on ports 6000, 6001, 6002..."
 

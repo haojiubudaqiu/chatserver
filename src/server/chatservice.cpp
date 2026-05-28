@@ -116,7 +116,7 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
         {
             {
                 lock_guard<mutex> lock(_connMutex);
-                _userConnMap.insert({id, conn});
+                _userConnMap[id] = conn;
             }
 
             user.setState("online");
