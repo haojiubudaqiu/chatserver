@@ -300,8 +300,19 @@ class ChatAgent:
                 f"- 用户问你是谁，回答：ChatServer AI智能助手"
             )
             msgs = [SystemMessage(content=system)] + list(state["messages"])
-            response = llm_with_tools.invoke(msgs)
-            return {"messages": [response]}
+            for attempt in range(3):
+                try:
+                    response = llm_with_tools.invoke(msgs)
+                    # Some ModelScope models return null `choices` on transient errors
+                    if hasattr(response, "content") and response.content is None:
+                        logger.warning(f"LLM returned null content (attempt {attempt+1}), retrying...")
+                        continue
+                    return {"messages": [response]}
+                except Exception as e:
+                    logger.warning(f"LLM call failed (attempt {attempt+1}): {e}")
+                    if attempt < 2:
+                        continue
+                    raise
 
         def should_continue(state: AgentState) -> str:
             last = state["messages"][-1]
@@ -334,7 +345,11 @@ class ChatAgent:
             "sender_name": sender_name,
         }
 
-        result = await self._app.ainvoke(state, config_dict)
+        try:
+            result = await self._app.ainvoke(state, config_dict)
+        except Exception as e:
+            logger.error(f"LangGraph ainvoke failed: {e}", exc_info=True)
+            return f"抱歉，AI处理请求时遇到暂时性错误，请稍后再试。"
 
         for msg in reversed(result["messages"]):
             if isinstance(msg, AIMessage) and msg.content:
