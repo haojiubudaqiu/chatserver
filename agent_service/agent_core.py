@@ -12,6 +12,7 @@ import aiohttp
 import json
 import logging
 from typing import Any, Optional, Sequence
+from uuid import uuid4
 
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
@@ -40,7 +41,6 @@ class McpSession:
         self._session_id: Optional[str] = None
 
     async def _request(self, body: dict, timeout: int = 10) -> Any:
-        """Send a JSON-RPC request to the MCP server and return the result."""
         import aiohttp
 
         headers = {}
@@ -57,13 +57,11 @@ class McpSession:
                 resp.raise_for_status()
                 data = await resp.json()
 
-                # Capture session ID from initialize response
                 if self._session_id is None:
                     sid = resp.headers.get("Mcp-Session-Id")
                     if sid:
                         self._session_id = sid
 
-                # Check for JSON-RPC error
                 if "error" in data:
                     raise RuntimeError(
                         f"MCP error (code={data['error'].get('code')}): "
@@ -73,7 +71,6 @@ class McpSession:
                 return data.get("result")
 
     async def initialize(self) -> None:
-        """Initialize a new MCP session."""
         result = await self._request(
             {
                 "jsonrpc": "2.0",
@@ -89,7 +86,6 @@ class McpSession:
         if result is None:
             raise RuntimeError("MCP initialize returned no result")
 
-        # Send initialized notification
         async with aiohttp.ClientSession() as session:
             await session.post(
                 self._server_url,
@@ -99,14 +95,12 @@ class McpSession:
             )
 
     async def list_tools(self) -> list:
-        """List available tools."""
         result = await self._request(
             {"jsonrpc": "2.0", "id": "2", "method": "tools/list"}
         )
         return (result or {}).get("tools", [])
 
     async def call_tool(self, name: str, arguments: dict) -> str:
-        """Call a tool by name with arguments."""
         result = await self._request(
             {
                 "jsonrpc": "2.0",
@@ -117,21 +111,23 @@ class McpSession:
         )
         if result is None:
             return ""
-        parts = []
-        for c in result.get("content", []):
-            if isinstance(c, dict):
-                parts.append(c.get("text", json.dumps(c)))
-            else:
-                parts.append(str(c))
-        return "\n".join(parts)
+        content = result.get("content")
+        if content is None:
+            return ""
+        if isinstance(content, dict):
+            return content.get("text", json.dumps(content, ensure_ascii=False))
+        if isinstance(content, list):
+            parts = []
+            for c in content:
+                if isinstance(c, dict):
+                    parts.append(c.get("text", json.dumps(c, ensure_ascii=False)))
+                else:
+                    parts.append(str(c))
+            return "\n".join(parts)
+        return str(content)
 
 
 class McpToolWrapper:
-    """Wraps an MCP tool definition into a callable LangChain tool.
-
-    Each invocation creates a fresh MCP session to avoid stale state.
-    """
-
     def __init__(self, server_url: str, name: str, description: str) -> None:
         self._server_url = server_url
         self.name = name
@@ -147,23 +143,41 @@ class McpToolWrapper:
             return f"Error: {e}"
 
 
-class ChatAgent:
-    """Main AI agent with LangGraph workflow."""
+def _make_dummy_llm():
+    """Dummy LLM with unique IDs per invocation (fixes add_messages dedup)."""
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.outputs import ChatResult, ChatGeneration
 
+    class DummyChatModel(BaseChatModel):
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            _ = messages
+            msg = AIMessage(
+                content="我是ChatServer AI智能助手！当前为开发模式（未配置LLM API Key）。\n"
+                        "如需真实AI对话能力，请设置 MODELSCOPE_API_KEY 环境变量。\n"
+                        "但我依然可以为您提供基础的聊天服务！请问有什么可以帮助您的？",
+                id=str(uuid4())
+            )
+            return ChatResult(generations=[ChatGeneration(message=msg)])
+
+        @property
+        def _llm_type(self):
+            return "dummy"
+
+    return DummyChatModel()
+
+
+class ChatAgent:
     def __init__(self, mcp_url: str) -> None:
         self._mcp_url = mcp_url
         self._app: Any = None
         self._memory = MemorySaver()
 
     async def initialize(self) -> None:
-        """Initialize LLM, tools, and compile the LangGraph workflow."""
         tools = []
 
-        # ── Tavily (web search) ──────────────────────────────────
         if config.has_tavily_key():
             try:
                 from langchain_community.tools.tavily_search import TavilySearchResults
-
                 tools.append(TavilySearchResults(max_results=3))
                 logger.info("Tavily web search enabled")
             except Exception as e:
@@ -171,7 +185,6 @@ class ChatAgent:
         else:
             logger.warning("TAVILY_API_KEY not set, web search disabled")
 
-        # ── MCP tools ────────────────────────────────────────────
         try:
             init_session = McpSession(self._mcp_url)
             await init_session.initialize()
@@ -182,7 +195,6 @@ class ChatAgent:
                     self._mcp_url, td["name"], td.get("description", "")
                 )
 
-                # Build LangChain-compatible tool
                 from langchain_core.tools import StructuredTool
 
                 def make_arun_wrapper(w: McpToolWrapper):
@@ -195,7 +207,7 @@ class ChatAgent:
                     name=td["name"],
                     description=td.get("description", "MCP Tool"),
                 )
-                
+
                 tools.append(mcp_tool)
                 logger.info(f"  Loaded MCP tool: {td['name']}")
 
@@ -204,7 +216,6 @@ class ChatAgent:
         except Exception as e:
             logger.warning(f"Failed to load MCP tools: {e}")
 
-        # ── LLM ──────────────────────────────────────────────────
         if config.has_model_api_key():
             llm = ChatOpenAI(
                 base_url=config.MODELSCOPE_BASE_URL,
@@ -214,10 +225,7 @@ class ChatAgent:
             )
         else:
             logger.warning("MODELSCOPE_API_KEY not set, using a dummy LLM")
-            from langchain_community.chat_models.fake import FakeMessagesListChatModel
-            from langchain_core.messages import AIMessage
-
-            llm = FakeMessagesListChatModel(responses=[AIMessage(content="I am a dummy AI assistant.")])
+            llm = _make_dummy_llm()
 
         if tools:
             try:
@@ -228,7 +236,6 @@ class ChatAgent:
         else:
             llm_with_tools = llm
 
-        # ── Build Graph ──────────────────────────────────────────
         def call_model(state: AgentState) -> dict:
             system = (
                 f"你是一个集成在高性能集群聊天服务器中的AI智能助手。\n"
@@ -263,14 +270,11 @@ class ChatAgent:
         workflow.add_edge("tools", "agent")
 
         self._app = workflow.compile(checkpointer=self._memory)
-        logger.info(
-            f"LangGraph agent compiled with {len(tools)} tools"
-        )
+        logger.info(f"LangGraph agent compiled with {len(tools)} tools")
 
     async def process_message(
         self, sender_id: int, sender_name: str, text: str
     ) -> str:
-        """Process a user message and return the agent's reply."""
         if not self._app:
             return "Agent not initialized."
 
@@ -282,7 +286,15 @@ class ChatAgent:
         }
 
         result = await self._app.ainvoke(state, config_dict)
+
+        for msg in reversed(result["messages"]):
+            if isinstance(msg, AIMessage) and msg.content:
+                logger.info(f"Reply to {sender_name}: {msg.content[:80]}")
+                return msg.content
+
         final = result["messages"][-1]
         if isinstance(final, AIMessage):
-            return final.content or ""
-        return str(final)
+            return final.content or "（空回复）"
+
+        logger.warning(f"Unexpected final msg type: {type(final).__name__}")
+        return "抱歉，我暂时无法回复，请稍后再试。"
