@@ -227,6 +227,17 @@ class ChatAgent:
         self._model_names = [config.MODEL_NAME] + config.FALLBACK_MODELS
         self._model_idx = 0
 
+    def _rotate_model(self) -> None:
+        for _ in range(len(self._model_names)):
+            self._model_idx = (self._model_idx + 1) % len(self._model_names)
+            try:
+                llm = self._create_llm()
+                llm.bind_tools(self._tools)
+                logger.info(f"Switched to model: {self._model_names[self._model_idx]}")
+                return
+            except NotImplementedError:
+                continue
+
     def _create_llm(self) -> ChatOpenAI:
         name = self._model_names[self._model_idx]
         logger.info(f"Creating LLM with model: {name}")
@@ -238,7 +249,8 @@ class ChatAgent:
         )
 
     async def initialize(self) -> None:
-        tools = []
+        self._tools: list = []
+        tools = self._tools
 
         if config.has_tavily_key():
             try:
@@ -330,21 +342,16 @@ class ChatAgent:
                     return {"messages": [response]}
                 except openai.RateLimitError:
                     logger.warning(f"Model {self._model_names[self._model_idx]} quota exceeded")
-                    # Rotate to next available model
-                    for _ in range(len(self._model_names)):
-                        self._model_idx = (self._model_idx + 1) % len(self._model_names)
-                        try:
-                            llm = self._create_llm()
-                            llm_with_tools = llm.bind_tools(tools)
-                            logger.info(f"Switched to model: {self._model_names[self._model_idx]}")
-                            break
-                        except NotImplementedError:
-                            continue
-                    # Retry with new model
+                    self._rotate_model()
+                    llm = self._create_llm()
+                    llm_with_tools = llm.bind_tools(tools)
                     continue
                 except Exception as e:
-                    logger.warning(f"LLM call failed (attempt {attempt+1}): {e}")
+                    logger.warning(f"Model {self._model_names[self._model_idx]} failed (attempt {attempt+1}): {e}")
                     if attempt < 2:
+                        self._rotate_model()
+                        llm = self._create_llm()
+                        llm_with_tools = llm.bind_tools(tools)
                         continue
                     raise
 
