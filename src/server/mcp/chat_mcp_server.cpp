@@ -29,7 +29,7 @@ bool ChatMcpServer::start(uint16_t port) {
     config.port = port;
     config.threadpool_size = 4;
     config.max_sessions = 10;
-    config.session_timeout = 60;
+    config.session_timeout = 300;
 
     server_ = std::make_unique<mcp::server>(config);
     server_->set_server_info("ChatClusterServer", "1.0.0");
@@ -89,13 +89,17 @@ void ChatMcpServer::registerTools() {
             .with_description("Get cluster chat server statistics including connection count and online user count")
             .build(),
         [svc](const json&, const string&) -> json {
-            size_t connCount = svc->getConnectionCount();
-            auto onlineIds = svc->getOnlineUserIds();
-            return {
-                {"connections", connCount},
-                {"onlineUsers", onlineIds.size()},
-                {"serverInfo", "Cluster Chat Server v1.0.0"}
-            };
+            try {
+                size_t connCount = svc->getConnectionCount();
+                auto onlineIds = svc->getOnlineUserIds();
+                return {
+                    {"connections", connCount},
+                    {"onlineUsers", onlineIds.size()},
+                    {"serverInfo", "Cluster Chat Server v1.0.0"}
+                };
+            } catch (const std::exception& e) {
+                return {{"error", string("chat_server_stats failed: ") + e.what()}};
+            }
         }
     );
 
@@ -104,18 +108,22 @@ void ChatMcpServer::registerTools() {
             .with_description("List all currently online users with their IDs")
             .build(),
         [svc](const json&, const string&) -> json {
-            auto ids = svc->getOnlineUserIds();
-            json result = json::array();
-            auto& userModel = svc->getUserModel();
-            for (int id : ids) {
-                User user = userModel.query(id);
-                if (user.getId() != -1) {
-                    result.push_back({{"id", user.getId()}, {"name", user.getName()}});
-                } else {
-                    result.push_back({{"id", id}, {"name", "unknown"}});
+            try {
+                auto ids = svc->getOnlineUserIds();
+                json result = json::array();
+                auto& userModel = svc->getUserModel();
+                for (int id : ids) {
+                    User user = userModel.query(id);
+                    if (user.getId() != -1) {
+                        result.push_back({{"id", user.getId()}, {"name", user.getName()}});
+                    } else {
+                        result.push_back({{"id", id}, {"name", "unknown"}});
+                    }
                 }
+                return {{"onlineUsers", result}, {"count", ids.size()}};
+            } catch (const std::exception& e) {
+                return {{"error", string("chat_list_online_users failed: ") + e.what()}};
             }
-            return {{"onlineUsers", result}, {"count", ids.size()}};
         }
     );
 
@@ -125,15 +133,19 @@ void ChatMcpServer::registerTools() {
             .with_number_param("user_id", "The ID of the user to query", true)
             .build(),
         [svc](const json& params, const string&) -> json {
-            int userId = params["user_id"].get<int>();
-            User user = svc->getUserModel().query(userId);
-            if (user.getId() == -1) {
-                return {{"error", "User not found"}, {"userId", userId}};
+            try {
+                int userId = params["user_id"].get<int>();
+                User user = svc->getUserModel().query(userId);
+                if (user.getId() == -1) {
+                    return {{"error", "User not found"}, {"userId", userId}};
+                }
+                return {
+                    {"user", userToJson(user)},
+                    {"isOnline", user.getState() == "online"}
+                };
+            } catch (const std::exception& e) {
+                return {{"error", string("chat_get_user_info failed: ") + e.what()}};
             }
-            return {
-                {"user", userToJson(user)},
-                {"isOnline", user.getState() == "online"}
-            };
         }
     );
 
@@ -143,22 +155,26 @@ void ChatMcpServer::registerTools() {
             .with_number_param("user_id", "The ID of the user whose friends to query", true)
             .build(),
         [svc](const json& params, const string&) -> json {
-            int userId = params["user_id"].get<int>();
-            User user = svc->getUserModel().query(userId);
-            if (user.getId() == -1) {
-                return {{"error", "User not found"}, {"userId", userId}};
+            try {
+                int userId = params["user_id"].get<int>();
+                User user = svc->getUserModel().query(userId);
+                if (user.getId() == -1) {
+                    return {{"error", "User not found"}, {"userId", userId}};
+                }
+                vector<User> friends = svc->getFriendModel().query(userId);
+                json friendList = json::array();
+                for (const auto& f : friends) {
+                    friendList.push_back(userToJson(f));
+                }
+                return {
+                    {"userId", userId},
+                    {"userName", user.getName()},
+                    {"friends", friendList},
+                    {"count", friends.size()}
+                };
+            } catch (const std::exception& e) {
+                return {{"error", string("chat_get_user_friends failed: ") + e.what()}};
             }
-            vector<User> friends = svc->getFriendModel().query(userId);
-            json friendList = json::array();
-            for (const auto& f : friends) {
-                friendList.push_back(userToJson(f));
-            }
-            return {
-                {"userId", userId},
-                {"userName", user.getName()},
-                {"friends", friendList},
-                {"count", friends.size()}
-            };
         }
     );
 
@@ -168,22 +184,26 @@ void ChatMcpServer::registerTools() {
             .with_number_param("group_id", "The ID of the group to query", true)
             .build(),
         [svc](const json& params, const string&) -> json {
-            int groupId = params["group_id"].get<int>();
-            Group group = svc->getGroupModel().queryGroup(groupId);
-            if (group.getId() == -1) {
-                return {{"error", "Group not found"}, {"groupId", groupId}};
+            try {
+                int groupId = params["group_id"].get<int>();
+                Group group = svc->getGroupModel().queryGroup(groupId);
+                if (group.getId() == -1) {
+                    return {{"error", "Group not found"}, {"groupId", groupId}};
+                }
+                json members = json::array();
+                for (const auto& gu : group.getUsers()) {
+                    members.push_back(groupUserToJson(gu));
+                }
+                return {
+                    {"groupId", group.getId()},
+                    {"groupName", group.getName()},
+                    {"description", group.getDesc()},
+                    {"members", members},
+                    {"memberCount", group.getUsers().size()}
+                };
+            } catch (const std::exception& e) {
+                return {{"error", string("chat_get_group_info failed: ") + e.what()}};
             }
-            json members = json::array();
-            for (const auto& gu : group.getUsers()) {
-                members.push_back(groupUserToJson(gu));
-            }
-            return {
-                {"groupId", group.getId()},
-                {"groupName", group.getName()},
-                {"description", group.getDesc()},
-                {"members", members},
-                {"memberCount", group.getUsers().size()}
-            };
         }
     );
 
@@ -193,27 +213,31 @@ void ChatMcpServer::registerTools() {
             .with_number_param("user_id", "The ID of the user whose groups to query", true)
             .build(),
         [svc](const json& params, const string&) -> json {
-            int userId = params["user_id"].get<int>();
-            User user = svc->getUserModel().query(userId);
-            if (user.getId() == -1) {
-                return {{"error", "User not found"}, {"userId", userId}};
+            try {
+                int userId = params["user_id"].get<int>();
+                User user = svc->getUserModel().query(userId);
+                if (user.getId() == -1) {
+                    return {{"error", "User not found"}, {"userId", userId}};
+                }
+                vector<Group> groups = svc->getGroupModel().queryGroups(userId);
+                json groupList = json::array();
+                for (const auto& g : groups) {
+                    groupList.push_back({
+                        {"id", g.getId()},
+                        {"name", g.getName()},
+                        {"desc", g.getDesc()},
+                        {"memberCount", g.getUsers().size()}
+                    });
+                }
+                return {
+                    {"userId", userId},
+                    {"userName", user.getName()},
+                    {"groups", groupList},
+                    {"count", groups.size()}
+                };
+            } catch (const std::exception& e) {
+                return {{"error", string("chat_list_user_groups failed: ") + e.what()}};
             }
-            vector<Group> groups = svc->getGroupModel().queryGroups(userId);
-            json groupList = json::array();
-            for (const auto& g : groups) {
-                groupList.push_back({
-                    {"id", g.getId()},
-                    {"name", g.getName()},
-                    {"desc", g.getDesc()},
-                    {"memberCount", g.getUsers().size()}
-                });
-            }
-            return {
-                {"userId", userId},
-                {"userName", user.getName()},
-                {"groups", groupList},
-                {"count", groups.size()}
-            };
         }
     );
 
@@ -224,47 +248,51 @@ void ChatMcpServer::registerTools() {
             .with_string_param("password", "The user's password", true)
             .build(),
         [svc](const json& params, const string&) -> json {
-            int userId = params["user_id"].get<int>();
-            string password = params["password"].get<string>();
-            
-            User user = svc->getUserModel().query(userId, true);
-            if (user.getId() == -1) {
-                return {{"success", false}, {"error", "User not found"}, {"userId", userId}};
+            try {
+                int userId = params["user_id"].get<int>();
+                string password = params["password"].get<string>();
+                
+                User user = svc->getUserModel().query(userId, true);
+                if (user.getId() == -1) {
+                    return {{"success", false}, {"error", "User not found"}, {"userId", userId}};
+                }
+                if (user.getPwd() != password) {
+                    return {{"success", false}, {"error", "Invalid password"}, {"userId", userId}};
+                }
+                if (user.getState() == "online") {
+                    return {{"success", false}, {"error", "User is already logged in from another device"}, {"userId", userId}, {"userName", user.getName()}};
+                }
+                
+                vector<User> friends = svc->getFriendModel().query(userId);
+                json friendsJson = json::array();
+                for (const auto& f : friends) {
+                    friendsJson.push_back({{"id", f.getId()}, {"name", f.getName()}, {"state", f.getState()}});
+                }
+                
+                vector<Group> groups = svc->getGroupModel().queryGroups(userId);
+                json groupsJson = json::array();
+                for (const auto& g : groups) {
+                    groupsJson.push_back({
+                        {"id", g.getId()},
+                        {"name", g.getName()},
+                        {"desc", g.getDesc()},
+                        {"memberCount", g.getUsers().size()}
+                    });
+                }
+                
+                return {
+                    {"success", true},
+                    {"message", "Login successful"},
+                    {"userId", user.getId()},
+                    {"userName", user.getName()},
+                    {"friends", friendsJson},
+                    {"friendsCount", friends.size()},
+                    {"groups", groupsJson},
+                    {"groupsCount", groups.size()}
+                };
+            } catch (const std::exception& e) {
+                return {{"success", false}, {"error", string("chat_user_login failed: ") + e.what()}};
             }
-            if (user.getPwd() != password) {
-                return {{"success", false}, {"error", "Invalid password"}, {"userId", userId}};
-            }
-            if (user.getState() == "online") {
-                return {{"success", false}, {"error", "User is already logged in from another device"}, {"userId", userId}, {"userName", user.getName()}};
-            }
-            
-            vector<User> friends = svc->getFriendModel().query(userId);
-            json friendsJson = json::array();
-            for (const auto& f : friends) {
-                friendsJson.push_back({{"id", f.getId()}, {"name", f.getName()}, {"state", f.getState()}});
-            }
-            
-            vector<Group> groups = svc->getGroupModel().queryGroups(userId);
-            json groupsJson = json::array();
-            for (const auto& g : groups) {
-                groupsJson.push_back({
-                    {"id", g.getId()},
-                    {"name", g.getName()},
-                    {"desc", g.getDesc()},
-                    {"memberCount", g.getUsers().size()}
-                });
-            }
-            
-            return {
-                {"success", true},
-                {"message", "Login successful"},
-                {"userId", user.getId()},
-                {"userName", user.getName()},
-                {"friends", friendsJson},
-                {"friendsCount", friends.size()},
-                {"groups", groupsJson},
-                {"groupsCount", groups.size()}
-            };
         }
     );
 
@@ -276,39 +304,43 @@ void ChatMcpServer::registerTools() {
             .with_string_param("message", "The message content to send", true)
             .build(),
         [svc](const json& params, const string&) -> json {
-            int fromId = params["from_user_id"].get<int>();
-            int toId = params["to_user_id"].get<int>();
-            string message = params["message"].get<string>();
-            
-            if (message.empty()) {
-                return {{"success", false}, {"error", "Message content cannot be empty"}};
+            try {
+                int fromId = params["from_user_id"].get<int>();
+                int toId = params["to_user_id"].get<int>();
+                string message = params["message"].get<string>();
+                
+                if (message.empty()) {
+                    return {{"success", false}, {"error", "Message content cannot be empty"}};
+                }
+                if (fromId == toId) {
+                    return {{"success", false}, {"error", "Cannot send message to yourself"}};
+                }
+                
+                User fromUser = svc->getUserModel().query(fromId);
+                if (fromUser.getId() == -1) {
+                    return {{"success", false}, {"error", "Sender user not found"}, {"fromUserId", fromId}};
+                }
+                
+                User toUser = svc->getUserModel().query(toId);
+                if (toUser.getId() == -1) {
+                    return {{"success", false}, {"error", "Recipient user not found"}, {"toUserId", toId}};
+                }
+                
+                bool ok = svc->sendMessageByMcp(fromId, toId, message);
+                if (!ok) {
+                    return {{"success", false}, {"error", "Failed to send message"}};
+                }
+                
+                return {
+                    {"success", true},
+                    {"message", "Message sent successfully"},
+                    {"from", {{"id", fromUser.getId()}, {"name", fromUser.getName()}}},
+                    {"to", {{"id", toUser.getId()}, {"name", toUser.getName()}}},
+                    {"deliveryMethod", toUser.getState() == "online" ? "direct" : "offline_stored"}
+                };
+            } catch (const std::exception& e) {
+                return {{"success", false}, {"error", string("chat_send_message failed: ") + e.what()}};
             }
-            if (fromId == toId) {
-                return {{"success", false}, {"error", "Cannot send message to yourself"}};
-            }
-            
-            User fromUser = svc->getUserModel().query(fromId);
-            if (fromUser.getId() == -1) {
-                return {{"success", false}, {"error", "Sender user not found"}, {"fromUserId", fromId}};
-            }
-            
-            User toUser = svc->getUserModel().query(toId);
-            if (toUser.getId() == -1) {
-                return {{"success", false}, {"error", "Recipient user not found"}, {"toUserId", toId}};
-            }
-            
-            bool ok = svc->sendMessageByMcp(fromId, toId, message);
-            if (!ok) {
-                return {{"success", false}, {"error", "Failed to send message"}};
-            }
-            
-            return {
-                {"success", true},
-                {"message", "Message sent successfully"},
-                {"from", {{"id", fromUser.getId()}, {"name", fromUser.getName()}}},
-                {"to", {{"id", toUser.getId()}, {"name", toUser.getName()}}},
-                {"deliveryMethod", toUser.getState() == "online" ? "direct" : "offline_stored"}
-            };
         }
     );
 

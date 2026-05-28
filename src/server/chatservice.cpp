@@ -4,6 +4,7 @@
 #include "cache_manager.h"
 #include "peer_relay.h"
 #include <muduo/base/Logging.h>
+#include <muduo/net/EventLoop.h>
 #include <cstdlib>
 using namespace std;
 using namespace muduo;
@@ -650,50 +651,72 @@ size_t ChatService::getConnectionCount() {
 
 bool ChatService::sendMessageByMcp(int fromId, int toId, const string& messageContent) {
     if (messageContent.empty()) return false;
-    
-    chat::OneChatMessage chatMsg;
-    int64_t now = muduo::Timestamp::now().microSecondsSinceEpoch();
-    chatMsg.mutable_base()->set_msgid(chat::ONE_CHAT_MSG);
-    chatMsg.mutable_base()->set_fromid(fromId);
-    chatMsg.mutable_base()->set_toid(toId);
-    chatMsg.mutable_base()->set_time(now);
-    chatMsg.set_message(messageContent);
-    string serializedMsg = chatMsg.SerializeAsString();
 
-    _chatHistoryModel.insert(1, fromId, toId, messageContent, now);
-
+    try
     {
-        lock_guard<mutex> lock(_connMutex);
-        auto it = _userConnMap.find(toId);
-        if (it != _userConnMap.end()) {
-            sendMsg(it->second, chatMsg.base().msgid(), serializedMsg);
-            LOG_INFO << "[MCP] Sent message from user " << fromId << " to online user " << toId;
+        chat::OneChatMessage chatMsg;
+        int64_t now = muduo::Timestamp::now().microSecondsSinceEpoch();
+        chatMsg.mutable_base()->set_msgid(chat::ONE_CHAT_MSG);
+        chatMsg.mutable_base()->set_fromid(fromId);
+        chatMsg.mutable_base()->set_toid(toId);
+        chatMsg.mutable_base()->set_time(now);
+        chatMsg.set_message(messageContent);
+        string serializedMsg = chatMsg.SerializeAsString();
+
+        _chatHistoryModel.insert(1, fromId, toId, messageContent, now);
+
+        // Check if recipient is on this server; dispatch send to EventLoop thread
+        // to ensure connection stays alive (shared_ptr capture prevents use-after-free)
+        {
+            lock_guard<mutex> lock(_connMutex);
+            auto it = _userConnMap.find(toId);
+            if (it != _userConnMap.end()) {
+                auto conn = it->second;
+                if (conn && conn->connected()) {
+                    int32_t msgid = chatMsg.base().msgid();
+                    // Capture shared_ptr by value to keep connection alive until
+                    // the lambda runs on the EventLoop thread
+                    muduo::net::EventLoop* loop = conn->getLoop();
+                    if (loop) {
+                        loop->runInLoop([conn, msgid, serializedMsg]() {
+                            sendMsg(conn, msgid, serializedMsg);
+                        });
+                    }
+                    LOG_INFO << "[MCP] Sent message from user " << fromId << " to online user " << toId;
+                    return true;
+                }
+            }
+        }
+
+        // Cross-server: PeerRelay → Kafka → offline
+        {
+            string relayMsg;
+            relayMsg.push_back(static_cast<char>(0x01));
+            relayMsg += serializedMsg;
+            if (PeerRelay::instance()->sendMessage(relayMsg)) {
+                LOG_INFO << "[MCP] Sent message from user " << fromId << " to user " << toId << " via PeerRelay";
+                return true;
+            }
+        }
+
+        if (_kafkaManager) {
+            _kafkaManager->sendMessage("user_messages", serializedMsg);
+            LOG_INFO << "[MCP] Published message from user " << fromId << " to user " << toId << " via Kafka";
             return true;
         }
-    }
 
-    {
-        string relayMsg;
-        relayMsg.push_back(static_cast<char>(0x01));
-        relayMsg += serializedMsg;
-        if (PeerRelay::instance()->sendMessage(relayMsg)) {
-            LOG_INFO << "[MCP] Sent message from user " << fromId << " to user " << toId << " via PeerRelay";
-            return true;
+        if (!_offlineMsgModel.insert(toId, serializedMsg)) {
+            LOG_ERROR << "[MCP] Failed to store offline message for user " << toId;
+            return false;
         }
-    }
-
-    if (_kafkaManager) {
-        _kafkaManager->sendMessage("user_messages", serializedMsg);
-        LOG_INFO << "[MCP] Published message from user " << fromId << " to user " << toId << " via Kafka";
+        LOG_INFO << "[MCP] Stored offline message from user " << fromId << " to user " << toId;
         return true;
     }
-
-    if (!_offlineMsgModel.insert(toId, serializedMsg)) {
-        LOG_ERROR << "[MCP] Failed to store offline message for user " << toId;
+    catch (const std::exception& e)
+    {
+        LOG_ERROR << "[MCP] Exception in sendMessageByMcp: " << e.what();
         return false;
     }
-    LOG_INFO << "[MCP] Stored offline message from user " << fromId << " to user " << toId;
-    return true;
 }
 
 void ChatService::getChatHistory(const TcpConnectionPtr &conn, const string &data, Timestamp time)

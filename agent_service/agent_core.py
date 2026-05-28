@@ -68,8 +68,21 @@ class McpSession:
 
             return data.get("result")
 
+    async def _request_with_retry(self, body: dict, timeout: int = 30) -> Any:
+        try:
+            return await self._request(body, timeout)
+        except (aiohttp.ClientResponseError, RuntimeError) as e:
+            # Session expired (404) or not initialized — reinitialize and retry
+            status = getattr(e, "status", 0)
+            if status == 404 or "Session not found" in str(e) or "Session not initialized" in str(e):
+                logger.info("MCP session expired, reinitializing...")
+                self._session_id = None
+                await self.initialize()
+                return await self._request(body, timeout)
+            raise
+
     async def initialize(self) -> None:
-        result = await self._request(
+        result = await self._request_with_retry(
             {
                 "jsonrpc": "2.0",
                 "id": "1",
@@ -92,13 +105,13 @@ class McpSession:
         )
 
     async def list_tools(self) -> list:
-        result = await self._request(
+        result = await self._request_with_retry(
             {"jsonrpc": "2.0", "id": "2", "method": "tools/list"}
         )
         return (result or {}).get("tools", [])
 
     async def call_tool(self, name: str, arguments: dict) -> str:
-        result = await self._request(
+        result = await self._request_with_retry(
             {
                 "jsonrpc": "2.0",
                 "id": "3",

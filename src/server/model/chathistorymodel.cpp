@@ -11,13 +11,17 @@ bool ChatHistoryModel::insert(int msgType, int fromId, int toId, const string& c
 
     MYSQL* mysql = conn->getConnection();
     std::string escaped(content.length() * 2 + 1, '\0');
-    mysql_real_escape_string(mysql, &escaped[0], content.c_str(), content.length());
+    size_t escapedLen = mysql_real_escape_string(mysql, &escaped[0], content.c_str(), content.length());
 
-    char sql[2048] = {0};
-    snprintf(sql, sizeof(sql),
+    char sql[8192] = {0};
+    int n = snprintf(sql, sizeof(sql),
         "insert into chat_message(msg_type, from_id, to_id, content, msg_time) "
-        "values(%d, %d, %d, '%s', %lld)",
-        msgType, fromId, toId, escaped.c_str(), (long long)msgTime);
+        "values(%d, %d, %d, '%.*s', %lld)",
+        msgType, fromId, toId, (int)escapedLen, escaped.c_str(), (long long)msgTime);
+    if (n < 0 || (size_t)n >= sizeof(sql)) {
+        LOG_ERROR << "SQL too long for chat_message insert (" << n << " bytes needed)";
+        return false;
+    }
 
     return conn->update(sql);
 }
