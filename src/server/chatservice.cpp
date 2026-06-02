@@ -688,6 +688,26 @@ bool ChatService::sendMessageByMcp(int fromId, int toId, const string& messageCo
             }
         }
 
+        // Also send a copy to the sender's connections (for MCP proxy sends,
+        // so user 393 sees the message the agent sent on their behalf)
+        {
+            lock_guard<mutex> lock(_connMutex);
+            auto it = _userConnMap.find(fromId);
+            if (it != _userConnMap.end()) {
+                auto conn = it->second;
+                if (conn && conn->connected()) {
+                    int32_t msgid = chatMsg.base().msgid();
+                    muduo::net::EventLoop* loop = conn->getLoop();
+                    if (loop) {
+                        loop->runInLoop([conn, msgid, serializedMsg]() {
+                            sendMsg(conn, msgid, serializedMsg);
+                        });
+                        LOG_DEBUG << "[MCP] Notified sender user " << fromId << " about message to " << toId;
+                    }
+                }
+            }
+        }
+
         // Cross-server: PeerRelay → Kafka → offline
         {
             string relayMsg;

@@ -197,8 +197,14 @@ function App() {
   const handleAddFriend = async () => {
     if (!user || !addFriendId) return
     try {
-      await api('/api/add_friend', { id: user.id, friendid: Number(addFriendId) })
-      showNotif('Friend added! Re-login to refresh list.')
+      const data = await api('/api/add_friend', { id: user.id, friendid: Number(addFriendId) })
+      if (data.err_num === 0) {
+        const fid = Number(addFriendId)
+        if (!friends.some(f => f.id === fid)) {
+          setFriends(prev => [...prev, { id: fid, name: `User#${fid}`, state: 'offline' }])
+        }
+        showNotif('Friend added!')
+      }
       setAddFriendId('')
     } catch (e: any) {
       showNotif(e.message)
