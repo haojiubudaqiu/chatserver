@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import './App.css'
@@ -91,7 +91,7 @@ function App() {
         return
       }
       if (data.type === 'chat' || data.type === 'groupchat') {
-        setMessages(prev => [...prev, { ...data, name: `User#${data.fromid}` }])
+        setMessages(prev => [...prev, { ...data, name: `User#${data.fromid}` }].sort((a, b) => a.time - b.time))
       }
     }
     ws.onclose = () => {
@@ -170,7 +170,7 @@ function App() {
       setUser(data.user)
       setFriends(data.friends)
       setGroups(data.groups)
-      const offlines = data.offlinemsg.map(m => ({ ...m, name: `User#${m.fromid}` }))
+      const offlines = data.offlinemsg.map(m => ({ ...m, name: `User#${m.fromid}` })).sort((a: ChatMessage, b: ChatMessage) => a.time - b.time)
       setMessages(offlines)
       connectWs(data.user.id)
       setPage('main')
@@ -242,13 +242,13 @@ function App() {
         setMessages(prev => [...prev, {
           type: 'chat', fromid: user.id, toid: selectedChat.id,
           time: Date.now() * 1000, message: inputText.trim(), name: user.name,
-        }])
+        }].sort((a, b) => a.time - b.time))
       } else {
         await api('/api/send_group_message', { id: user.id, groupid: selectedChat.id, message: inputText.trim() })
         setMessages(prev => [...prev, {
           type: 'groupchat', fromid: user.id, groupid: selectedChat.id,
           time: Date.now() * 1000, message: inputText.trim(), name: user.name,
-        }])
+        }].sort((a, b) => a.time - b.time))
       }
       setInputText('')
     } catch (e: any) {
@@ -284,14 +284,18 @@ function App() {
     f.name.toLowerCase().includes(friendFilter.toLowerCase())
   )
 
-  const chatMessages = messages.filter(m => {
-    if (!selectedChat) return false
-    if (selectedChat.type === 'friend') {
-      return (m.type === 'chat' && m.fromid === selectedChat.id && m.toid === user?.id) ||
-             (m.type === 'chat' && m.fromid === user?.id && m.toid === selectedChat.id)
-    }
-    return m.type === 'groupchat' && m.groupid === selectedChat.id
-  })
+  const chatMessages = useMemo(() => {
+    return messages
+      .filter(m => {
+        if (!selectedChat) return false
+        if (selectedChat.type === 'friend') {
+          return (m.type === 'chat' && m.fromid === selectedChat.id && m.toid === user?.id) ||
+                 (m.type === 'chat' && m.fromid === user?.id && m.toid === selectedChat.id)
+        }
+        return m.type === 'groupchat' && m.groupid === selectedChat.id
+      })
+      .sort((a, b) => a.time - b.time)
+  }, [messages, selectedChat, user?.id])
 
   const friendName = (id: number) => friends.find(f => f.id === id)?.name || `User#${id}`
 

@@ -13,6 +13,7 @@ import json
 import logging
 import openai
 import re
+from datetime import datetime
 from typing import Any, Optional, Sequence
 from uuid import uuid4
 
@@ -318,16 +319,21 @@ class ChatAgent:
 
         def call_model(state: AgentState) -> dict:
             nonlocal llm_with_tools
+            now = datetime.now()
             system = (
                 f"你是一个集成在高性能集群聊天服务器中的AI智能助手。\n"
+                f"当前日期时间：{now.strftime('%Y年%m月%d日 %H:%M')}\n"
                 f"当前与你对话的用户ID是：{state['sender_id']}（{state.get('sender_name','')}）\n\n"
                 f"## 可用能力\n"
                 f"- 日常闲聊、问答\n"
                 f"- 使用 tavily_search_results_json 搜索最新资讯（联网搜索）\n"
+                f"  - 当用户问'今天'、'昨天'、'最近'等涉及当前日期的问题时，必须使用 tavily 搜索获取实时信息\n"
+                f"  - 搜索时在关键词中主动加上当前日期（{now.strftime('%Y年%m月%d日')}）以提高准确性\n"
                 f"- 调用后端MCP工具查好友、查群组、查在线用户、查看服务器统计\n"
                 f"- 使用 chat_send_message 帮用户给他的好友发消息（from_user_id 必须用 {state['sender_id']}）\n\n"
                 f"## 行为准则\n"
                 f"- 热情、专业、友好\n"
+                f"- 如果用户一次问了多个问题，必须逐一回答，每个问题调用对应的工具\n"
                 f"- 调用工具后用自然语言总结结果回复用户\n"
                 f"- 用户问你是谁，回答：ChatServer AI智能助手"
             )
