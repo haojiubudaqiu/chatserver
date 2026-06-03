@@ -71,6 +71,9 @@ async def main() -> None:
         pass
     finally:
         await tcp_client.stop()
+        if 'agent' in locals():
+            await agent.close()
+        logger.info("Agent service shut down.")
 
 
 if __name__ == "__main__":

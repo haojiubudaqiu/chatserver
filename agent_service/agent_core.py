@@ -8,7 +8,7 @@ Workflow:
   4. Agent replies via TCP
 """
 
-import aiohttp
+import contextlib
 import json
 import logging
 import openai
@@ -26,6 +26,10 @@ from langgraph.checkpoint.memory import MemorySaver
 from typing import TypedDict, Annotated
 from pydantic import BaseModel, Field, create_model
 
+from mcp.client.sse import sse_client
+from mcp import ClientSession
+from langchain_mcp_adapters.tools import load_mcp_tools
+
 import config
 
 logger = logging.getLogger("agent_core")
@@ -35,132 +39,6 @@ class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     sender_id: int
     sender_name: str
-
-
-class McpSession:
-    """Reusable MCP session using a persistent aiohttp session."""
-
-    def __init__(self, server_url: str) -> None:
-        self._server_url = server_url
-        self._session_id: Optional[str] = None
-        self._http = aiohttp.ClientSession()
-
-    async def _request(self, body: dict, timeout: int = 10) -> Any:
-        headers = {}
-        if self._session_id:
-            headers["Mcp-Session-Id"] = self._session_id
-
-        async with self._http.post(
-            self._server_url,
-            json=body,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=timeout),
-        ) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-
-            if self._session_id is None:
-                sid = resp.headers.get("Mcp-Session-Id")
-                if sid:
-                    self._session_id = sid
-
-            if "error" in data:
-                raise RuntimeError(
-                    f"MCP error (code={data['error'].get('code')}): "
-                    f"{data['error'].get('message')}"
-                )
-
-            return data.get("result")
-
-    async def _request_with_retry(self, body: dict, timeout: int = 30) -> Any:
-        try:
-            return await self._request(body, timeout)
-        except (aiohttp.ClientResponseError, RuntimeError) as e:
-            # Session expired (404) or not initialized — reinitialize and retry
-            status = getattr(e, "status", 0)
-            if status == 404 or "Session not found" in str(e) or "Session not initialized" in str(e):
-                logger.info("MCP session expired, reinitializing...")
-                self._session_id = None
-                await self.initialize()
-                return await self._request(body, timeout)
-            raise
-
-    async def initialize(self) -> None:
-        result = await self._request_with_retry(
-            {
-                "jsonrpc": "2.0",
-                "id": "1",
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2025-03-26",
-                    "capabilities": {},
-                    "clientInfo": {"name": "agent-service", "version": "1.0"},
-                },
-            }
-        )
-        if result is None:
-            raise RuntimeError("MCP initialize returned no result")
-
-        await self._http.post(
-            self._server_url,
-            json={"jsonrpc": "2.0", "method": "notifications/initialized"},
-            headers={"Mcp-Session-Id": self._session_id},
-            timeout=aiohttp.ClientTimeout(total=5),
-        )
-
-    async def list_tools(self) -> list:
-        result = await self._request_with_retry(
-            {"jsonrpc": "2.0", "id": "2", "method": "tools/list"}
-        )
-        return (result or {}).get("tools", [])
-
-    async def call_tool(self, name: str, arguments: dict) -> str:
-        result = await self._request_with_retry(
-            {
-                "jsonrpc": "2.0",
-                "id": "3",
-                "method": "tools/call",
-                "params": {"name": name, "arguments": arguments},
-            }
-        )
-        if result is None:
-            return ""
-        content = result.get("content")
-        if content is None:
-            return ""
-        if isinstance(content, dict):
-            return content.get("text", json.dumps(content, ensure_ascii=False))
-        if isinstance(content, list):
-            parts = []
-            for c in content:
-                if isinstance(c, dict):
-                    parts.append(c.get("text", json.dumps(c, ensure_ascii=False)))
-                else:
-                    parts.append(str(c))
-            return "\n".join(parts)
-        return str(content)
-
-
-class McpToolWrapper:
-    def __init__(self, server_url: str, name: str, description: str) -> None:
-        self._server_url = server_url
-        self._session: Optional[McpSession] = None
-        self.name = name
-        self.description = description
-
-    async def ensure_session(self) -> None:
-        if self._session is None:
-            self._session = McpSession(self._server_url)
-            await self._session.initialize()
-
-    async def arun(self, **kwargs: Any) -> str:
-        try:
-            await self.ensure_session()
-            logger.info(f"MCP tool call '{self.name}': {json.dumps(kwargs, ensure_ascii=False)}")
-            return await self._session.call_tool(self.name, kwargs)
-        except Exception as e:
-            logger.warning(f"MCP tool '{self.name}' failed: {e}")
-            return f"Error: {e}"
 
 
 def _make_dummy_llm():
@@ -192,41 +70,15 @@ def _strip_think_tags(text: str) -> str:
 
 
 
-def _mcp_schema_to_pydantic(name: str, schema: dict) -> type[BaseModel]:
-    """Convert MCP inputSchema (JSON Schema) to a Pydantic model for StructuredTool."""
-    fields = {}
-    props = schema.get("properties", {})
-    required = set(schema.get("required", []))
-
-    json_to_python = {
-        "string": str,
-        "number": int,
-        "integer": int,
-        "boolean": bool,
-        "array": list,
-        "object": dict,
-    }
-
-    for field_name, prop in props.items():
-        js_type = prop.get("type", "string")
-        py_type = json_to_python.get(js_type, str)
-        description = prop.get("description", "")
-        if field_name in required:
-            fields[field_name] = (py_type, Field(..., description=description))
-        else:
-            fields[field_name] = (Optional[py_type], Field(None, description=description))
-
-    return create_model(f"{name}_args", **fields)
-
-
 class ChatAgent:
     def __init__(self, mcp_url: str) -> None:
-        self._mcp_url = mcp_url
+        self._sse_url = mcp_url.replace("/mcp", "/sse")
         self._app: Any = None
         self._memory = MemorySaver()
         # Models to try in order; rotates on 429 (quota exceeded)
         self._model_names = [config.MODEL_NAME] + config.FALLBACK_MODELS
         self._model_idx = 0
+        self._exit_stack = contextlib.AsyncExitStack()
 
     def _rotate_model(self) -> None:
         for _ in range(len(self._model_names)):
@@ -264,40 +116,15 @@ class ChatAgent:
             logger.warning("TAVILY_API_KEY not set, web search disabled")
 
         try:
-            init_session = McpSession(self._mcp_url)
-            await init_session.initialize()
-            tool_defs = await init_session.list_tools()
-
-            for td in tool_defs:
-                wrapper = McpToolWrapper(
-                    self._mcp_url, td["name"], td.get("description", "")
-                )
-
-                from langchain_core.tools import StructuredTool
-
-                def make_arun_wrapper(w: McpToolWrapper):
-                    async def mcp_fn(**kwargs: Any) -> str:
-                        return await w.arun(**kwargs)
-                    return mcp_fn
-
-                args_schema = _mcp_schema_to_pydantic(
-                    td["name"], td.get("inputSchema", {})
-                )
-
-                mcp_tool = StructuredTool.from_function(
-                    coroutine=make_arun_wrapper(wrapper),
-                    name=td["name"],
-                    description=td.get("description", "MCP Tool"),
-                    args_schema=args_schema,
-                )
-
-                tools.append(mcp_tool)
-                logger.info(f"  Loaded MCP tool: {td['name']}")
-
-            logger.info(f"Loaded {len(tool_defs)} MCP tools")
+            streams = await self._exit_stack.enter_async_context(sse_client(self._sse_url))
+            session = await self._exit_stack.enter_async_context(ClientSession(*streams))
+            await session.initialize()
+            mcp_tools = await load_mcp_tools(session)
+            tools.extend(mcp_tools)
+            logger.info(f"Loaded {len(mcp_tools)} MCP tools via Official SDK")
 
         except Exception as e:
-            logger.warning(f"Failed to load MCP tools: {e}")
+            logger.error(f"Failed to load MCP tools via SDK: {e}")
 
         if config.has_model_api_key():
             llm_with_tools = None
@@ -378,6 +205,11 @@ class ChatAgent:
 
         self._app = workflow.compile(checkpointer=self._memory)
         logger.info(f"LangGraph agent compiled with {len(tools)} tools")
+
+    async def close(self) -> None:
+        """优雅关闭 Agent 服务，断开 SSE 长连接"""
+        await self._exit_stack.aclose()
+        logger.info("MCP SSE connections closed.")
 
     async def process_message(
         self, sender_id: int, sender_name: str, text: str
