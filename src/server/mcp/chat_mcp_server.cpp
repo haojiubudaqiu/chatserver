@@ -39,6 +39,8 @@ bool ChatMcpServer::start(uint16_t port) {
         "and send private messages to users on behalf of a logged-in account."
     );
 
+    server_->set_capabilities({{"tools", json::object()}});
+
     registerTools();
 
     if (!server_->start(false)) {
