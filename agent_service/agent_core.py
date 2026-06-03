@@ -9,12 +9,11 @@ Workflow:
 """
 
 import contextlib
-import json
 import logging
 import openai
 import re
 from datetime import datetime
-from typing import Any, Optional, Sequence
+from typing import Any, Sequence
 from uuid import uuid4
 
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
@@ -24,7 +23,6 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 from typing import TypedDict, Annotated
-from pydantic import BaseModel, Field, create_model
 
 from mcp.client.sse import sse_client
 from mcp import ClientSession

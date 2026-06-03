@@ -18,6 +18,7 @@ async def test_agent_initialization():
     # MCP will fail to connect — that's OK, agent still starts
     await agent.initialize()
     assert agent._app is not None
+    await agent.close()
 
 
 @pytest.mark.asyncio
@@ -29,6 +30,7 @@ async def test_agent_process_message_basic():
     await agent.initialize()
     result = await agent.process_message(42, "TestUser", "Hello")
     assert isinstance(result, str)
+    await agent.close()
 
 
 @pytest.mark.asyncio
@@ -49,6 +51,7 @@ async def test_memory_isolation():
     # The two users should have different threads; the agent shouldn't
     # say "Alice" to user 2. We can't guarantee the exact output
     # without a real LLM, but we can check it doesn't crash.
+    await agent.close()
 
 
 @pytest.mark.asyncio
@@ -60,3 +63,4 @@ async def test_empty_message():
     await agent.initialize()
     result = await agent.process_message(1, "User", "")
     assert isinstance(result, str)
+    await agent.close()
