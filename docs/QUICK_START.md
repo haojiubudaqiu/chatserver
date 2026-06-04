@@ -261,7 +261,8 @@ docker exec chat_mysql_master mysql -h127.0.0.1 -uroot -p'Sf523416&111' chat -e 
 
 ```bash
 cd ~/chatserver
-nohup uvicorn frontend.bridge.main:app --host 0.0.0.0 --port 8000 > /tmp/bridge.log 2>&1 &
+cd ~/chatserver/frontend/bridge
+nohup uvicorn main:app --host 0.0.0.0 --port 8000 > /tmp/bridge.log 2>&1 &
 
 # 验证 Bridge 启动成功
 curl -s http://127.0.0.1:8000/api/me/9999
@@ -612,12 +613,8 @@ SERVER_PORT=6002 nohup ./bin/ChatServer 0.0.0.0 6002 > /tmp/server2.log 2>&1 &
 sleep 3
 
 # 5. 启动 Bridge
-nohup uvicorn frontend.bridge.main:app --host 0.0.0.0 --port 8000 > /tmp/bridge.log 2>&1 &
-
-# 6. 启动 AI Agent（需先设置 API Key）
-export MODELSCOPE_API_KEY="ms-你的KEY"
-export TAVILY_API_KEY="tvly-你的KEY"    # 可选
-setsid nohup python3 agent_service/main.py > /tmp/agent.log 2>&1 &
+cd ~/chatserver/frontend/bridge
+nohup uvicorn main:app --host 0.0.0.0 --port 8000 > /tmp/bridge.log 2>&1 &
 
 sleep 3
 
