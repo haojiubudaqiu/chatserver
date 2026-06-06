@@ -46,3 +46,6 @@ frontend/bridge/proto/__pycache__/
 agent_venv/
 *.swp
 *.swo
+
+# Environment files (API keys)
+.env

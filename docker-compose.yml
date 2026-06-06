@@ -365,8 +365,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
-      args:
-        VITE_BRIDGE_URL: http://127.0.0.1:8000
     container_name: chat_web
     ports:
       - "3000:80"
