@@ -43,6 +43,24 @@ cd build && cmake .. && make
 8. **Protobuf** — `message.proto`, `ProtoMsgHandlerMap` (message ID → handler binding)
 9. **MCP Server** — `ChatMcpServer` (HTTP-based MCP server for AI agent integration), embeds `c++_mcp/` library
 
+### AI Agent Architecture (Dual Channel)
+
+```
+┌─────────────┐     MCP HTTP (tools)     ┌──────────────┐
+│  ChatServer  │◄─────────────────────────│  AI Agent    │
+│  (C++ muduo) │     /sse + /message      │  (Python)    │
+│              │─────────────────────────►│              │
+│              │  TCP/Protobuf (messages) │  LangGraph   │
+│              │◄────────────────────────►│  + LLM       │
+└──────┬───────┘                          └──────┬───────┘
+       │                                         │
+       │ ChatService / _userConnMap              │ Tavily API
+       │ Kafka broadcast                         │ (web search)
+       │ MySQL/Redis                             │
+```
+
+**Dual channel**: TCP for real-time message send/receive, MCP HTTP for tool calls (query friends, send messages, get server stats). AI user fixed ID=10000.
+
 ### Cross-Server Communication Architecture
 
 ```
@@ -64,8 +82,9 @@ Server A (user A) ──→ sends msg to user B
 - Singleton (ChatService, KafkaManager, CacheManager, DatabaseRouter, ConnectionPool)
 - Observer pattern via callbacks (muduo connection/message callbacks)
 - Read/write separation (DatabaseRouter routes writes to master, reads to slave)
+- AI Agent uses MCP Official Python SDK (`mcp.ClientSession` + `langchain_mcp_adapters`) for tool calling
 
-## Project Structure (after cleanup)
+## Project Structure
 
 ```
 chatserver/
@@ -80,20 +99,34 @@ chatserver/
 │   ├── log/                — async_logging.cpp, log_file.cpp
 │   ├── mcp/                — chat_mcp_server.cpp (MCP tools for AI agents)
 │   └── proto/              — message.proto (protobuf definitions)
+├── agent_service/          — AI Agent service (Python)
+│   ├── main.py             — Entry point
+│   ├── agent_core.py       — LangGraph + LLM + MCP tools
+│   ├── tcp_bridge.py       — TCP client to ChatServer
+│   ├── config.py           — Env var configuration
+│   ├── requirements.txt
+│   └── Dockerfile
+├── frontend/
+│   ├── bridge/             — Python FastAPI bridge (REST + WebSocket)
+│   │   ├── main.py         — HTTP + WS endpoints
+│   │   ├── chat_protocol.py — Protobuf TCP communication
+│   │   └── Dockerfile
+│   └── web/                — React SPA (TypeScript + Vite)
+│       ├── src/App.tsx
+│       └── package.json
 ├── c++_mcp/                — MCP C++ library (HTTP+SSE+Stdio transport)
-├── src/client/             — Client implementation
-├── include/server/         — Mirror of src/server/ headers
+├── include/server/         — C++ headers
 ├── test/                   — Test code
-├── docker/                 — Docker configs
-├── docker-compose.yml      — Docker Compose orchestration (15 containers)
-├── Dockerfile.server       — Server Docker image
-├── Dockerfile.nginx        — Nginx Docker image
+├── docker/                 — Docker configs (MySQL, Redis, init scripts)
+├── docker-compose.yml      — 17 containers orchestration
+├── Dockerfile.server       — Server Docker image (multi-stage)
+├── Dockerfile.web          — Web frontend Docker image (Node→Nginx)
+├── Dockerfile.nginx        — Nginx LB Docker image
 ├── nginx.conf              — Nginx TCP load balancer config
-├── CMakeLists.txt          — Build configuration
-├── autobuild.sh            — Build script
-├── autobuild.sh            — Build script
-├── start_servers.sh        — Start 3 local servers for development
-└── README.md               — Project documentation
+├── nginx-web.conf          — Nginx web frontend + API proxy config
+├── test_full.sh            — 61 functional tests
+├── test_agent_e2e.sh       — 10 agent E2E tests
+└── start_servers.sh        — Start 3 local servers for development
 ```
 
 ## Key Implementation Details
@@ -107,7 +140,8 @@ chatserver/
 - **MySQL master/slave** — `DatabaseRouter` auto-routes writes to master, reads to slave. `forceMaster=true` available for read-after-write consistency.
 - **Thread safety** — `_userConnMap` protected by `_connMutex` in ChatService.
 - **Offline messages** — Stored in MySQL `offlinemessage` table. Pushed to user on login, then deleted.
-- **MCP Server** — Optional HTTP MCP server (`--mcp-port PORT`). Exposes 8 tools: `chat_user_login`, `chat_send_message`, `chat_server_stats`, `chat_list_online_users`, `chat_get_user_info`, `chat_get_user_friends`, `chat_get_group_info`, `chat_list_user_groups`. Runs in a separate thread via `c++_mcp` library. Supports Streamable HTTP (2025-03-26 spec) on `/mcp` endpoint. `chat_user_login` validates credentials and returns user profile; `chat_send_message` sends private messages using the same delivery pipeline (local TCP → Kafka → offline storage) as the native client.
+- **MCP Server** — Optional HTTP MCP server (`--mcp-port PORT`). Exposes 8 tools: `chat_user_login`, `chat_send_message`, `chat_server_stats`, `chat_list_online_users`, `chat_get_user_info`, `chat_get_user_friends`, `chat_get_group_info`, `chat_list_user_groups`. Runs in a separate thread via `c++_mcp` library. Supports Streamable HTTP (2025-03-26 spec) on `/mcp` endpoint. Must call `set_capabilities({{"tools", json::object()}})` for MCP official Python SDK compatibility. `chat_user_login` validates credentials and returns user profile; `chat_send_message` sends private messages using the same delivery pipeline (local TCP → Kafka → offline storage) as the native client, and also notifies the sender's connection.
+- **AI Agent** — Python service using LangGraph + ChatOpenAI (via ModelScope). Connects via TCP/Protobuf for messages and MCP HTTP for tools. Uses `mcp.ClientSession` + `sse_client` + `langchain_mcp_adapters` (pinned `<0.2.0`). System prompt includes `datetime.now()` to prevent date hallucination. `call_model` rotates through fallback models on 429/null choices. `_strip_think_tags` removes `<think>` reasoning tags from LLM output.
 
 ## Common Development Tasks
 
@@ -139,13 +173,30 @@ SERVER_PORT=6002 KAFKA_HOST=localhost KAFKA_PORT=9093 nohup ./bin/ChatServer 0.0
 - **`KAFKA_PORT=9093`** — Docker Kafka's EXTERNAL listener uses port 9093, not the internal 9092.
 - `REDIS_SENTINEL1/2/3` — Optional: Redis Sentinel addresses for HA mode.
 
-### Start Bridge & Frontend
+### One-Click Docker Deploy
 ```bash
-# Python Bridge (already in docker compose or manually):
-# cd frontend/bridge && pip install -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Start ALL 17 containers (MySQL, Redis, Kafka, 3×ChatServer, Nginx, Bridge, Agent, Web)
+docker compose up -d
 
-# Frontend (serve built dist):
-cd frontend/web && npx serve dist -l 3000
+# Check status
+docker compose ps
+
+# Web frontend: http://localhost:3000
+# Bridge API:   http://localhost:8000
+# Nginx health: http://localhost:8080/health
+```
+
+### Local Development (Start manually)
+```bash
+# Python Bridge
+cd frontend/bridge && pip install -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+# Frontend
+cd frontend/web && npm install && npm run dev
+
+# AI Agent
+export MODELSCOPE_API_KEY="ms-your-key"
+python3 agent_service/main.py
 ```
 
 ### Run Tests
@@ -170,3 +221,16 @@ cd frontend/web && npx serve dist -l 3000
 - `include/server/kafka/kafka_manager.h` — Kafka cross-server messaging
 - `include/server/log/async_logging.h` — Async logger
 - `src/server/proto/message.proto` — Protobuf message definitions
+- `src/server/mcp/chat_mcp_server.cpp` — 8 MCP tools for AI agent
+- `agent_service/main.py` — AI Agent entry point
+- `agent_service/agent_core.py` — LangGraph + LLM + MCP tools, `_rotate_model`, `_strip_think_tags`
+- `agent_service/tcp_bridge.py` — TCP client to ChatServer with reconnection logic
+- `agent_service/config.py` — Model config (`MODEL_NAME`, `FALLBACK_MODELS`)
+- `agent_service/requirements.txt` — Dependencies, `langchain-mcp-adapters<0.2.0`
+- `frontend/bridge/main.py` — FastAPI REST + WebSocket bridge
+- `frontend/bridge/chat_protocol.py` — Protobuf TCP communication
+- `frontend/web/src/App.tsx` — React SPA with markdown rendering
+- `docker-compose.yml` — 17 containers orchestration
+- `Dockerfile.server` — Multi-stage C++ build
+- `Dockerfile.web` — React build → Nginx static serve
+- `nginx-web.conf` — Nginx reverse proxy for frontend API/WS

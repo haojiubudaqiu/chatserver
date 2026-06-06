@@ -7,6 +7,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -27,8 +28,8 @@ from proto import message_pb2 as chat
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("bridge")
 
-SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 6000
+SERVER_HOST = os.environ.get("SERVER_HOST", "127.0.0.1")
+SERVER_PORT = int(os.environ.get("SERVER_PORT", "6000"))
 
 # Active sessions: user_id -> Session
 sessions: dict[int, Session] = {}

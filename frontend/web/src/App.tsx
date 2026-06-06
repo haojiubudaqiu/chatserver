@@ -240,13 +240,13 @@ function App() {
       if (selectedChat.type === 'friend') {
         await api('/api/send_message', { id: user.id, toid: selectedChat.id, message: inputText.trim() })
         setMessages(prev => [...prev, {
-          type: 'chat', fromid: user.id, toid: selectedChat.id,
+          type: 'chat' as const, fromid: user.id, toid: selectedChat.id,
           time: Date.now() * 1000, message: inputText.trim(), name: user.name,
         }].sort((a, b) => a.time - b.time))
       } else {
         await api('/api/send_group_message', { id: user.id, groupid: selectedChat.id, message: inputText.trim() })
         setMessages(prev => [...prev, {
-          type: 'groupchat', fromid: user.id, groupid: selectedChat.id,
+          type: 'groupchat' as const, fromid: user.id, groupid: selectedChat.id,
           time: Date.now() * 1000, message: inputText.trim(), name: user.name,
         }].sort((a, b) => a.time - b.time))
       }

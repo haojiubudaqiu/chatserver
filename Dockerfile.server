@@ -1,21 +1,17 @@
-# 聊天服务器 - 多阶段构建
+# ChatPulse Server - 多阶段构建
 # 阶段1: 构建
 FROM ubuntu:20.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
-# 使用阿里云镜像源
-RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
-    sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
-
-# 预先配置时区，避免 tzdata 安装时交互式提示
+# 配置时区
 RUN apt-get update && apt-get install -y tzdata && \
     ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     dpkg-reconfigure -f noninteractive tzdata && \
     rm -rf /var/lib/apt/lists/*
 
-# 安装编译工具链
+# 安装编译工具链和依赖库
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -40,16 +36,16 @@ RUN cd /tmp && \
     ldconfig && \
     rm -rf /tmp/protobuf*
 
-# 下载并安装muduo网络库
+# 下载并安装 muduo 网络库
 RUN cd /tmp && \
     git clone --depth 1 https://github.com/chenshuo/muduo.git && \
     cd muduo && \
     mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local && \
     make -j$(nproc) && \
-    cp -r ../muduo /usr/local/include/ && \
-    cp -r lib/* /usr/local/lib/ && \
-    ldconfig
+    make install && \
+    ldconfig && \
+    rm -rf /tmp/muduo
 
 WORKDIR /build
 
@@ -63,22 +59,19 @@ RUN mkdir -p build && cd build && \
     -DProtobuf_PROTOC_EXECUTABLE=/usr/local/bin/protoc && \
     make -j$(nproc)
 
-# 阶段2: 运行 - 使用更小的基础镜像
+# 阶段2: 运行镜像
 FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
-# 使用阿里云镜像源
-RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
-    sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
-
-# 预先配置时区，避免 tzdata 安装时交互式提示
+# 配置时区
 RUN apt-get update && apt-get install -y tzdata && \
     ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     dpkg-reconfigure -f noninteractive tzdata && \
     rm -rf /var/lib/apt/lists/*
 
+# 仅安装运行时需要的库
 RUN apt-get update && apt-get install -y \
     libmysqlclient-dev \
     libhiredis-dev \
@@ -90,6 +83,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# 从构建阶段复制 protobuf 运行时库
 COPY --from=builder /usr/local/lib/libprotobuf* /usr/local/lib/
 RUN ldconfig
 

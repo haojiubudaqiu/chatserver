@@ -1,5 +1,13 @@
+# ChatPulse 集群智能聊天服务器 — Docker Compose 编排文件
+# 启动全部基础设施: docker compose up -d
+# 仅启动基础设施（不含 Agent/Bridge）: docker compose up -d mysql-master mysql-slave1 mysql-slave2 redis ...
+# 停止: docker compose down
+# 停止并删除数据卷: docker compose down -v
+
 services:
-  # MySQL 主数据库
+  # ==================== 基础设施层 ====================
+
+  # MySQL 主库（接受写操作）
   mysql-master:
     image: mysql:8.0
     container_name: chat_mysql_master
@@ -17,8 +25,13 @@ services:
     networks:
       - chat_network
     restart: unless-stopped
+    healthcheck:
+      test: mysqladmin ping -h 127.0.0.1 -uroot -p'Sf523416&111'
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # MySQL 从数据库 1
+  # MySQL 从库 1（只读副本）
   mysql-slave1:
     image: mysql:8.0
     container_name: chat_mysql_slave1
@@ -36,9 +49,10 @@ services:
       - chat_network
     restart: unless-stopped
     depends_on:
-      - mysql-master
+      mysql-master:
+        condition: service_healthy
 
-  # MySQL 从数据库 2
+  # MySQL 从库 2（只读副本）
   mysql-slave2:
     image: mysql:8.0
     container_name: chat_mysql_slave2
@@ -56,9 +70,10 @@ services:
       - chat_network
     restart: unless-stopped
     depends_on:
-      - mysql-master
+      mysql-master:
+        condition: service_healthy
 
-  # Redis 主节点
+  # Redis 主节点（数据缓存）
   redis:
     image: redis:7-alpine
     container_name: chat_redis
@@ -69,6 +84,11 @@ services:
     networks:
       - chat_network
     restart: unless-stopped
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   # Redis 从节点 1
   redis-slave1:
@@ -100,19 +120,19 @@ services:
       - chat_network
     restart: unless-stopped
 
-  # Redis Sentinel 1
+  # Redis Sentinel 1（高可用监控）
   redis-sentinel1:
     image: redis:7-alpine
     container_name: chat_redis_sentinel1
     ports:
       - "26379:26379"
     volumes:
-      - ./redis-sentinel1.conf:/usr/local/etc/redis/sentinel.conf
+      - ./docker/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
     command: redis-sentinel /usr/local/etc/redis/sentinel.conf
-    networks:
-      - chat_network
     depends_on:
       - redis
+    networks:
+      - chat_network
     restart: unless-stopped
 
   # Redis Sentinel 2
@@ -122,12 +142,12 @@ services:
     ports:
       - "26380:26379"
     volumes:
-      - ./redis-sentinel2.conf:/usr/local/etc/redis/sentinel.conf
+      - ./docker/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
     command: redis-sentinel /usr/local/etc/redis/sentinel.conf
-    networks:
-      - chat_network
     depends_on:
       - redis
+    networks:
+      - chat_network
     restart: unless-stopped
 
   # Redis Sentinel 3
@@ -137,15 +157,15 @@ services:
     ports:
       - "26381:26379"
     volumes:
-      - ./redis-sentinel3.conf:/usr/local/etc/redis/sentinel.conf
+      - ./docker/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
     command: redis-sentinel /usr/local/etc/redis/sentinel.conf
-    networks:
-      - chat_network
     depends_on:
       - redis
+    networks:
+      - chat_network
     restart: unless-stopped
 
-  # ZooKeeper (Kafka 依赖)
+  # ZooKeeper（Kafka 依赖）
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
     container_name: chat_zookeeper
@@ -156,7 +176,7 @@ services:
       - chat_network
     restart: unless-stopped
 
-  # Kafka
+  # Kafka 消息队列（跨服务器消息传递）
   kafka:
     image: confluentinc/cp-kafka:7.6.1
     container_name: chat_kafka
@@ -171,22 +191,27 @@ services:
     ports:
       - "9092:9092"
       - "9093:9093"
+    depends_on:
+      - zookeeper
     networks:
       - chat_network
     restart: unless-stopped
 
-  # 聊天服务器实例 1
+  # ==================== 服务层 ====================
+
+  # ChatPulse 服务器实例 1（带 MCP AI 接口）
   chat_server_1:
     build:
       context: .
       dockerfile: Dockerfile.server
     container_name: chat_server_1
     depends_on:
-      - mysql-master
-      - mysql-slave1
-      - mysql-slave2
-      - redis
-      - kafka
+      mysql-master:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     ports:
       - "6000:6000"
       - "8888:8888"
@@ -207,18 +232,19 @@ services:
       - chat_network
     restart: unless-stopped
 
-  # 聊天服务器实例 2
+  # ChatPulse 服务器实例 2
   chat_server_2:
     build:
       context: .
       dockerfile: Dockerfile.server
     container_name: chat_server_2
     depends_on:
-      - mysql-master
-      - mysql-slave1
-      - mysql-slave2
-      - redis
-      - kafka
+      mysql-master:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     ports:
       - "6001:6001"
       - "8889:8889"
@@ -239,18 +265,19 @@ services:
       - chat_network
     restart: unless-stopped
 
-  # 聊天服务器实例 3
+  # ChatPulse 服务器实例 3
   chat_server_3:
     build:
       context: .
       dockerfile: Dockerfile.server
     container_name: chat_server_3
     depends_on:
-      - mysql-master
-      - mysql-slave1
-      - mysql-slave2
-      - redis
-      - kafka
+      mysql-master:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     ports:
       - "6002:6002"
       - "8890:8890"
@@ -271,7 +298,7 @@ services:
       - chat_network
     restart: unless-stopped
 
-  # Nginx 负载均衡器
+  # Nginx TCP 负载均衡器（将客户端连接分发到 3 个 ChatPulse 实例）
   nginx:
     build:
       context: .
@@ -288,7 +315,30 @@ services:
       - chat_network
     restart: unless-stopped
 
-  # AI 智能助手服务
+  # ==================== AI 层 ====================
+
+  # Python Bridge（FastAPI，Web 前端的 REST + WebSocket 入口）
+  # 环境变量 SERVER_HOST 和 SERVER_PORT 指定要连接的 ChatPulse 实例
+  chat_bridge:
+    build:
+      context: ./frontend/bridge
+      dockerfile: Dockerfile
+    container_name: chat_bridge
+    depends_on:
+      - chat_server_1
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_HOST=chat_server_1
+      - SERVER_PORT=6000
+    networks:
+      - chat_network
+    restart: unless-stopped
+
+  # AI 智能助手（LangChain + LangGraph + ModelScope LLM）
+  # 需要设置 MODELSCOPE_API_KEY 环境变量才能正常工作
+  # 可通过 .env 文件或 docker compose run 的 -e 参数传入:
+  #   docker compose up -d chat_agent -e MODELSCOPE_API_KEY=ms-xxx
   chat_agent:
     build:
       context: ./agent_service
@@ -302,6 +352,26 @@ services:
       - MCP_SERVER_URL=http://chat_server_1:8888/mcp
       - MODELSCOPE_API_KEY=${MODELSCOPE_API_KEY:-}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+    networks:
+      - chat_network
+    restart: unless-stopped
+
+  # ==================== Web 前端层 ====================
+
+  # ChatPulse Web 前端（React SPA）
+  # 构建时可通过 VITE_BRIDGE_URL 参数覆盖 Bridge 地址
+  # 默认通过 Nginx 代理 /api/ 和 /ws/ 到 chat_bridge:8000
+  chat_web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_BRIDGE_URL: http://127.0.0.1:8000
+    container_name: chat_web
+    ports:
+      - "3000:80"
+    depends_on:
+      - chat_bridge
     networks:
       - chat_network
     restart: unless-stopped

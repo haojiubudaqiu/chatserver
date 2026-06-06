@@ -1,5 +1,10 @@
 build/
 bin/
 .git/
-*.md
-docker/
+.gitignore
+*.log
+node_modules/
+agent_venv/
+__pycache__/
+*.pyc
+.DS_Store

@@ -153,86 +153,73 @@ Redis 仅用于数据缓存。跨服务器消息传递通过 Kafka 广播实现�
 
 ## 快速开始
 
-### 系统要求
+### 方式一：Docker 一键部署（推荐）
 
-- **Ubuntu 20.04+**（服务器端）
-  - 至少 4GB 内存、20GB 磁盘
-  - Docker & Docker Compose
-  - CMake 3.10+、g++ 9+、Python 3.10+、Node.js 18+
-- **Windows 10/11**（前端开发）
-  - Node.js 18+
-
-### 完整部署指南
-
-详细从零搭建步骤请参阅：
-
-> **[docs/QUICK_START.md](docs/QUICK_START.md)**
-
-覆盖以下内容：
-- Ubuntu 基础环境安装（Docker、C++ 工具链、Python、Node.js、Protobuf）
-- 项目克隆与 C++ 后端编译
-- Docker 启动 12 个基础设施容器（MySQL 主从、Redis 主从 + Sentinel、Kafka、Nginx）
-- 3 个 ChatPulse Server 实例启动
-- Python Bridge 启动
-- AI Agent 启动（含 API Key 配置）
-- Windows 前端构建与运行
-- 常见问题排查
-
-### 快速命令速查
+只需 Docker，无需安装任何 C++/Python/Node.js 工具链：
 
 ```bash
-# ===== Ubuntu 后端 =====
-
 # 1. 安装 Docker
 sudo apt install -y docker.io docker-compose-v2
-sudo usermod -aG docker $USER  # 然后重新登录
+sudo usermod -aG docker $USER && newgrp docker
 
-# 2. 克隆并编译
-cd ~
+# 2. 克隆并启动
 git clone https://github.com/haojiubudaqiu/chatserver.git
 cd chatserver
-git checkout main
-pip3 install -r frontend/bridge/requirements.txt  # Bridge 依赖
-pip3 install -r agent_service/requirements.txt     # AI Agent 依赖（可选）
-cd frontend/web && npm install && cd ../..
 
-# 3. 启动基础设施
+# 3.（可选）配置 AI API Key
+cp .env.example .env
+# 编辑 .env 填入 MODELSCOPE_API_KEY
+
+# 4. 一键启动（首次构建约 15 分钟，包含 protobuf + muduo 编译）
 docker compose up -d
 
-# 4. 编译 C++ 服务端
+# 5. 验证
+docker compose ps                     # 所有 17 个容器应为 Up
+curl http://127.0.0.1:8080/health     # Nginx: OK
+curl http://127.0.0.1:8000/api/me/9999  # Bridge: {"detail":"Not logged in"}
+
+# 6. 打开浏览器访问 http://localhost:3000
+```
+
+### 方式二：本地开发（直接编译运行）
+
+> 详细从零搭建步骤请参阅 **[docs/QUICK_START.md](docs/QUICK_START.md)**
+
+```bash
+# 1. 安装依赖
+sudo apt install -y docker.io docker-compose-v2 cmake g++ python3-pip nodejs
+pip3 install -r frontend/bridge/requirements.txt
+pip3 install -r agent_service/requirements.txt
+cd frontend/web && npm install && cd ../..
+
+# 2. 启动基础设施（MySQL, Redis, Kafka, Nginx）
+docker compose up -d
+
+# 3. 编译 C++ 服务端
 mkdir -p build && cd build && cmake .. && make -j$(nproc) && cd ..
 
-# 5. 重置 AI 用户状态
+# 4. 重置 AI 用户状态
 docker exec chat_mysql_master mysql -h127.0.0.1 -uroot -p'Sf523416&111' chat -e \
   "UPDATE user SET state='offline' WHERE id=10000;"
 
-# 6. 启动 3 个 Server 实例
+# 5. 启动 3 个 Server 实例
 export KAFKA_HOST=localhost KAFKA_PORT=9093
 SERVER_PORT=6000 setsid nohup ./bin/ChatServer 0.0.0.0 6000 --mcp-port 8888 > /tmp/s0.log &
 SERVER_PORT=6001 setsid nohup ./bin/ChatServer 0.0.0.0 6001 > /tmp/s1.log &
 SERVER_PORT=6002 setsid nohup ./bin/ChatServer 0.0.0.0 6002 > /tmp/s2.log &
 sleep 3
 
-# 7. 启动 Bridge
+# 6. 启动 Bridge + AI Agent
 cd frontend/bridge && setsid nohup uvicorn main:app --host 0.0.0.0 --port 8000 > /tmp/bridge.log &
-
-# 8. 启动 AI Agent（必须先设置 API Key）
+cd ../..
 export MODELSCOPE_API_KEY="ms-你的KEY"
-export TAVILY_API_KEY="tvly-你的KEY"  # 可选
-setsid nohup python3 agent_service/main.py > /tmp/agent.log &
+setsid nohup python3 -u agent_service/main.py > /tmp/agent.log &
 
-# 9. 验证
-curl -s http://127.0.0.1:8000/api/me/9999
-# 应返回: {"detail":"Not logged in"}
-
-
-# ===== Windows 前端 =====
-
-cd C:\chatserver\frontend\web
-set VITE_BRIDGE_URL=http://192.168.1.100:8000
-npm run build
-npx serve dist -l 3000
-# 打开 http://localhost:3000
+# 7. Windows 前端
+# cd frontend/web
+# set VITE_BRIDGE_URL=http://192.168.1.100:8000
+# npm run dev     # 开发模式
+# npx serve dist -l 3000  # 生产模式
 ```
 
 ---
@@ -337,7 +324,12 @@ chatserver/
 ├── docs/                          # 文档
 │   ├── QUICK_START.md             # 从零搭建指南
 │   └── AGENT_USER_GUIDE.md        # AI 智能助手用户指南
-├── docker-compose.yml             # 基础设施编排（12 个容器）
+├── docker-compose.yml             # 17 个容器一键编排
+├── Dockerfile.server              # ChatServer 多阶段构建
+├── Dockerfile.web                 # Web 前端多阶段构建（Node → Nginx）
+├── Dockerfile.nginx               # Nginx 负载均衡器
+├── nginx.conf                     # Nginx TCP 负载均衡配置
+├── nginx-web.conf                 # Nginx Web 前端 + API 代理配置
 ├── start_servers.sh               # 本地开发启动脚本
 ├── test_full.sh                   # 61 项功能测试
 └── test_agent_e2e.sh              # 10 项 Agent E2E 测试
@@ -399,25 +391,72 @@ chatserver/
 
 ---
 
+## 一键 Docker 部署（推荐）
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/haojiubudaqiu/chatserver.git
+cd chatserver
+
+# 2. 配置 API Key（可选，AI 需要）
+cp .env.example .env
+# 编辑 .env 填入真实的 API Key
+
+# 3. 一键启动全部 17 个容器
+docker compose up -d
+
+# 等待约 2 分钟后，验证所有服务运行正常
+docker compose ps
+
+# 4. 打开浏览器访问 Web 前端
+# http://localhost:3000
+```
+
+就这么简单。`docker compose up -d` 会自动构建并启动全部 17 个容器：
+
+| 层 | 容器 | 数量 |
+|----|------|------|
+| 基础设施 | MySQL 主从、Redis 主从+Sentinel、ZooKeeper、Kafka | 10 |
+| 服务层 | 3×ChatServer + Nginx LB | 4 |
+| AI 层 | Bridge (FastAPI) + Agent (LangChain) + Web 前端 | 3 |
+
+AI Agent 在未配置 `MODELSCOPE_API_KEY` 时会自动以开发模式运行（使用 Dummy LLM），可以测试对话流程但不会产生有意义的回复。
+
+### 逐层启动（调试用）
+
+```bash
+# 仅基础设施
+docker compose up -d mysql-master redis kafka
+
+# 基础设施 + 服务层（无 AI）
+docker compose up -d mysql-master mysql-slave1 mysql-slave2 redis redis-slave1 redis-slave2 \
+  redis-sentinel1 redis-sentinel2 redis-sentinel3 zookeeper kafka \
+  chat_server_1 chat_server_2 chat_server_3 nginx
+
+# 全部（含 AI Agent + Bridge + Web 前端）
+docker compose up -d
+```
+
 ## Docker 端口映射
 
-| 容器 | 内部端口 | 外部端口 |
-|------|----------|----------|
-| MySQL Master | 3306 | 3306 |
-| MySQL Slave1 | 3306 | 3307 |
-| MySQL Slave2 | 3306 | 3308 |
-| Redis | 6379 | 6379 |
-| Redis Slave1 | 6379 | 6380 |
-| Redis Slave2 | 6379 | 6381 |
-| Sentinel 1-3 | 26379 | 26379-26381 |
-| Kafka (INTERNAL) | 9092 | 9092 |
-| Kafka (EXTERNAL) | 9093 | 9093 |
-| ChatPulse 1 | 6000/8888 | 6000/8888 |
-| ChatPulse 2 | 6001 | 6001 |
-| ChatPulse 3 | 6002 | 6002 |
-| Nginx TCP LB | 7000 | 7000 |
-| Nginx HTTP | 8080 | 8080 |
-| **Bridge API** | **8000** | **8000** |
+| 容器 | 内部端口 | 外部端口 | 说明 |
+|------|----------|----------|------|
+| MySQL Master | 3306 | 3306 | 主库 |
+| MySQL Slave1 | 3306 | 3307 | 从库 |
+| MySQL Slave2 | 3306 | 3308 | 从库 |
+| Redis | 6379 | 6379 | 缓存主节点 |
+| Redis Slave1 | 6379 | 6380 | 缓存从节点 |
+| Redis Slave2 | 6379 | 6381 | 缓存从节点 |
+| Sentinel 1-3 | 26379 | 26379-26381 | 哨兵 |
+| Kafka INTERNAL | 9092 | 9092 | 容器间通信 |
+| Kafka EXTERNAL | 9093 | 9093 | 宿主机访问 |
+| ChatPulse Server1 | 6000/8888 | 6000/8888 | TCP + MCP |
+| ChatPulse Server2 | 6001 | 6001 | TCP |
+| ChatPulse Server3 | 6002 | 6002 | TCP |
+| Nginx TCP LB | 7000 | 7000 | 负载均衡 |
+| Nginx HTTP | 8080 | 8080 | 健康检查 |
+| **Bridge** | **8000** | **8000** | REST + WebSocket |
+| **Web 前端** | **80** | **3000** | React SPA |
 
 ---
 
