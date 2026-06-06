@@ -257,6 +257,25 @@ function App() {
     }
   }
 
+  const filteredFriends = friends.filter(f =>
+    f.name.toLowerCase().includes(friendFilter.toLowerCase())
+  )
+
+  const chatMessages = useMemo(() => {
+    return messages
+      .filter(m => {
+        if (!selectedChat) return false
+        if (selectedChat.type === 'friend') {
+          return (m.type === 'chat' && m.fromid === selectedChat.id && m.toid === user?.id) ||
+                 (m.type === 'chat' && m.fromid === user?.id && m.toid === selectedChat.id)
+        }
+        return m.type === 'groupchat' && m.groupid === selectedChat.id
+      })
+      .sort((a, b) => a.time - b.time)
+  }, [messages, selectedChat, user?.id])
+
+  const friendName = (id: number) => friends.find(f => f.id === id)?.name || `User#${id}`
+
   if (page === 'login') {
     return (
       <div className="auth-container">
@@ -280,25 +299,6 @@ function App() {
       </div>
     )
   }
-
-  const filteredFriends = friends.filter(f =>
-    f.name.toLowerCase().includes(friendFilter.toLowerCase())
-  )
-
-  const chatMessages = useMemo(() => {
-    return messages
-      .filter(m => {
-        if (!selectedChat) return false
-        if (selectedChat.type === 'friend') {
-          return (m.type === 'chat' && m.fromid === selectedChat.id && m.toid === user?.id) ||
-                 (m.type === 'chat' && m.fromid === user?.id && m.toid === selectedChat.id)
-        }
-        return m.type === 'groupchat' && m.groupid === selectedChat.id
-      })
-      .sort((a, b) => a.time - b.time)
-  }, [messages, selectedChat, user?.id])
-
-  const friendName = (id: number) => friends.find(f => f.id === id)?.name || `User#${id}`
 
   return (
     <div className="main-container">
