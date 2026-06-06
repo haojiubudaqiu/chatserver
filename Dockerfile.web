@@ -11,10 +11,6 @@ RUN npm ci
 # 复制源代码并构建
 COPY frontend/web/ .
 
-# VITE_BRIDGE_URL 可以在构建时通过 --build-arg 覆盖
-ARG VITE_BRIDGE_URL=http://127.0.0.1:8000
-ENV VITE_BRIDGE_URL=${VITE_BRIDGE_URL}
-
 RUN npm run build
 
 # 阶段2: Nginx 运行环境
