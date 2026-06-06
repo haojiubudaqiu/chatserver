@@ -3,7 +3,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import './App.css'
 
-const BRIDGE = import.meta.env.VITE_BRIDGE_URL || 'http://127.0.0.1:8000'
+const BRIDGE = import.meta.env.VITE_BRIDGE_URL || ''
+const WS_BRIDGE = import.meta.env.VITE_BRIDGE_URL || `http://${location.host}`
 
 interface User {
   id: number
@@ -80,7 +81,7 @@ function App() {
 
   const connectWs = useCallback((uid: number) => {
     wsReconnectRef.current = true
-    const wsUrl = (import.meta.env.VITE_BRIDGE_URL || 'http://127.0.0.1:8000').replace(/^http/, 'ws')
+    const wsUrl = WS_BRIDGE.replace(/^http/, 'ws')
     const ws = new WebSocket(`${wsUrl}/ws/${uid}`)
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data)
