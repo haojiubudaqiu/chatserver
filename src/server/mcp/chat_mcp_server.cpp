@@ -299,6 +299,46 @@ void ChatMcpServer::registerTools() {
     );
 
     server_->register_tool(
+        mcp::tool_builder("chat_get_conversation_history")
+            .with_description("Get recent conversation history between a user and the AI agent. Returns messages in chronological order. Used for memory reconstruction when AI agent restarts.")
+            .with_number_param("user_id", "The user's numeric ID", true)
+            .with_number_param("agent_id", "The AI agent's numeric ID (usually 10000)", true)
+            .with_number_param("limit", "Number of recent messages to return (max 50, default 10)", false)
+            .build(),
+        [svc](const json& params, const string&) -> json {
+            try {
+                int userId = params["user_id"].get<int>();
+                int agentId = params["agent_id"].get<int>();
+                int limit = params.value("limit", 10);
+                if (limit > 50) limit = 50;
+
+                auto history = svc->getChatHistoryModel().queryPrivateChat(
+                    userId, agentId, limit, 0);
+
+                json messages = json::array();
+                for (const auto& rec : history) {
+                    string role = (rec.fromId == agentId) ? "assistant" : "user";
+                    messages.push_back({
+                        {"role", role},
+                        {"content", rec.content},
+                        {"time", rec.msgTime}
+                    });
+                }
+
+                std::reverse(messages.begin(), messages.end());
+
+                return {
+                    {"user_id", userId},
+                    {"messages", messages},
+                    {"count", messages.size()}
+                };
+            } catch (const std::exception& e) {
+                return {{"error", string("chat_get_conversation_history failed: ") + e.what()}};
+            }
+        }
+    );
+
+    server_->register_tool(
         mcp::tool_builder("chat_send_message")
             .with_description("Send a private message from one user to another. The sender must be authenticated first via chat_user_login.")
             .with_number_param("from_user_id", "The sender's numeric user ID", true)
@@ -346,5 +386,5 @@ void ChatMcpServer::registerTools() {
         }
     );
 
-    LOG_INFO << "Registered " << 8 << " MCP tools for chat server management";
+    LOG_INFO << "Registered " << 9 << " MCP tools for chat server management";
 }

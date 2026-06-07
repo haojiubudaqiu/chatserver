@@ -12,10 +12,10 @@ services:
     image: mysql:8.0
     container_name: chat_mysql_master
     environment:
-      MYSQL_ROOT_PASSWORD: Sf523416&111
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Sf523416&111}
       MYSQL_DATABASE: chat
       MYSQL_USER: chatuser
-      MYSQL_PASSWORD: chatpass123
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-chatpass123}
     ports:
       - "3306:3306"
     volumes:
@@ -26,7 +26,7 @@ services:
       - chat_network
     restart: unless-stopped
     healthcheck:
-      test: mysqladmin ping -h 127.0.0.1 -uroot -p'Sf523416&111'
+      test: mysqladmin ping -h 127.0.0.1 -uroot -p'${MYSQL_ROOT_PASSWORD:-Sf523416&111}'
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,10 +36,10 @@ services:
     image: mysql:8.0
     container_name: chat_mysql_slave1
     environment:
-      MYSQL_ROOT_PASSWORD: Sf523416&111
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Sf523416&111}
       MYSQL_DATABASE: chat
       MYSQL_USER: chatuser
-      MYSQL_PASSWORD: chatpass123
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-chatpass123}
     ports:
       - "3307:3306"
     volumes:
@@ -57,10 +57,10 @@ services:
     image: mysql:8.0
     container_name: chat_mysql_slave2
     environment:
-      MYSQL_ROOT_PASSWORD: Sf523416&111
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Sf523416&111}
       MYSQL_DATABASE: chat
       MYSQL_USER: chatuser
-      MYSQL_PASSWORD: chatpass123
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-chatpass123}
     ports:
       - "3308:3306"
     volumes:
@@ -325,12 +325,12 @@ services:
       dockerfile: Dockerfile
     container_name: chat_bridge
     depends_on:
-      - chat_server_1
+      - nginx
     ports:
       - "8000:8000"
     environment:
-      - SERVER_HOST=chat_server_1
-      - SERVER_PORT=6000
+      - SERVER_HOST=nginx
+      - SERVER_PORT=7000
     networks:
       - chat_network
     restart: unless-stopped
@@ -345,13 +345,14 @@ services:
       dockerfile: Dockerfile
     container_name: chat_ai_agent
     depends_on:
-      - chat_server_1
+      - nginx
     environment:
-      - CHAT_SERVER_HOST=chat_server_1
-      - CHAT_SERVER_PORT=6000
+      - CHAT_SERVER_HOST=nginx
+      - CHAT_SERVER_PORT=7000
       - MCP_SERVER_URL=http://chat_server_1:8888/mcp
       - MODELSCOPE_API_KEY=${MODELSCOPE_API_KEY:-}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - REDIS_HOST=redis
     networks:
       - chat_network
     restart: unless-stopped

@@ -43,6 +43,7 @@ public:
     GroupModel& getGroupModel() { return _groupModel; }
     FriendModel& getFriendModel() { return _friendModel; }
     OfflineMsgModel& getOfflineMsgModel() { return _offlineMsgModel; }
+    ChatHistoryModel& getChatHistoryModel() { return _chatHistoryModel; }
     
     std::vector<int> getOnlineUserIds();
     size_t getConnectionCount();

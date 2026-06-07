@@ -32,6 +32,17 @@ FALLBACK_MODELS = [
 # ── Tavily (Web Search) ────────────────────────────────────────
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 
+# ── Redis (Memory Persistence) ──────────────────────────────────
+REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
+REDIS_DB = int(os.environ.get("REDIS_DB", "1"))
+
+# ── Memory Management ──────────────────────────────────────────
+MAX_CONVERSATION_TURNS = 40          # 超过此轮数触发滑动窗口压缩
+SUMMARIZE_TURNS = 20                 # 压缩时保留的最近轮数
+BOOTSTRAP_MESSAGE_COUNT = 10         # 重启时从 MySQL 拉取的最近消息数
+REDIS_TTL_SECONDS = 604800           # Redis 记忆过期时间（7 天）
+
 # ── Runtime ─────────────────────────────────────────────────────
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 RECONNECT_DELAY = int(os.environ.get("RECONNECT_DELAY", "5"))
