@@ -78,7 +78,6 @@ class ChatAgent:
     def __init__(self, mcp_url: str) -> None:
         self._sse_url = mcp_url.replace("/mcp", "/sse")
         self._app: Any = None
-        self._memory = None
         self._model_names = [config.MODEL_NAME] + config.FALLBACK_MODELS
         self._model_idx = 0
         self._exit_stack = contextlib.AsyncExitStack()
@@ -121,7 +120,7 @@ class ChatAgent:
             logger.info(f"Redis connected ({config.REDIS_HOST}:{config.REDIS_PORT}, db={config.REDIS_DB})")
         except Exception as e:
             logger.warning(f"Redis connection failed, agent will run without persistent memory: {e}")
-            await self._redis.close()
+            await self._redis.aclose()
             self._redis = None
 
         self._tools = []
@@ -239,7 +238,7 @@ class ChatAgent:
         await self._exit_stack.aclose()
         if self._redis:
             try:
-                await self._redis.close()
+                await self._redis.aclose()
             except Exception:
                 pass
         logger.info("Agent connections closed.")
@@ -252,10 +251,12 @@ class ChatAgent:
         key = f"chat:history:{sender_id}"
         history = [
             {
-                "type": "human" if isinstance(m, HumanMessage) else "ai",
+                "type": "human" if isinstance(m, HumanMessage)
+                        else "system" if isinstance(m, SystemMessage)
+                        else "ai",
                 "content": _strip_think_tags(m.content) if isinstance(m, AIMessage) else m.content,
             }
-            for m in messages if isinstance(m, (HumanMessage, AIMessage))
+            for m in messages if isinstance(m, (HumanMessage, AIMessage, SystemMessage))
         ]
         try:
             await self._redis.set(key, json.dumps(history))
@@ -276,6 +277,8 @@ class ChatAgent:
             for d in data:
                 if d["type"] == "human":
                     messages.append(HumanMessage(content=d["content"]))
+                elif d["type"] == "system":
+                    messages.append(SystemMessage(content=d["content"]))
                 else:
                     messages.append(AIMessage(content=d["content"]))
             return messages
@@ -313,7 +316,13 @@ class ChatAgent:
                 )
             )
             raw = await self._mcp_session.send_request(request, LaxToolResult)
-            data = raw.content if isinstance(raw.content, dict) else {}
+            data = {}
+            if isinstance(raw.content, dict):
+                data = raw.content
+            elif isinstance(raw.content, list) and len(raw.content) > 0:
+                ct = raw.content[0]
+                if hasattr(ct, "text") and ct.text:
+                    data = json.loads(ct.text)
             if "error" in data:
                 logger.warning(f"Bootstrap failed for user {user_id}: {data['error']}")
                 return []

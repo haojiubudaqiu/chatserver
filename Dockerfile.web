@@ -5,8 +5,8 @@ FROM node:20-alpine AS builder
 WORKDIR /build
 
 # 复制 package 文件并安装依赖（利用 Docker 缓存）
-COPY frontend/web/package.json frontend/web/package-lock.json ./
-RUN npm ci
+COPY frontend/web/package.json ./
+RUN npm install
 
 # 复制源代码并构建
 COPY frontend/web/ .

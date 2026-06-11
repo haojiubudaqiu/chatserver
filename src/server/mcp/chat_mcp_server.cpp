@@ -136,7 +136,7 @@ void ChatMcpServer::registerTools() {
             .build(),
         [svc](const json& params, const string&) -> json {
             try {
-                int userId = params["user_id"].get<int>();
+                int userId = params.at("user_id").get<int>();
                 User user = svc->getUserModel().query(userId);
                 if (user.getId() == -1) {
                     return {{"error", "User not found"}, {"userId", userId}};
@@ -158,7 +158,7 @@ void ChatMcpServer::registerTools() {
             .build(),
         [svc](const json& params, const string&) -> json {
             try {
-                int userId = params["user_id"].get<int>();
+                int userId = params.at("user_id").get<int>();
                 User user = svc->getUserModel().query(userId);
                 if (user.getId() == -1) {
                     return {{"error", "User not found"}, {"userId", userId}};
@@ -187,7 +187,7 @@ void ChatMcpServer::registerTools() {
             .build(),
         [svc](const json& params, const string&) -> json {
             try {
-                int groupId = params["group_id"].get<int>();
+                int groupId = params.at("group_id").get<int>();
                 Group group = svc->getGroupModel().queryGroup(groupId);
                 if (group.getId() == -1) {
                     return {{"error", "Group not found"}, {"groupId", groupId}};
@@ -216,7 +216,7 @@ void ChatMcpServer::registerTools() {
             .build(),
         [svc](const json& params, const string&) -> json {
             try {
-                int userId = params["user_id"].get<int>();
+                int userId = params.at("user_id").get<int>();
                 User user = svc->getUserModel().query(userId);
                 if (user.getId() == -1) {
                     return {{"error", "User not found"}, {"userId", userId}};
@@ -251,8 +251,8 @@ void ChatMcpServer::registerTools() {
             .build(),
         [svc](const json& params, const string&) -> json {
             try {
-                int userId = params["user_id"].get<int>();
-                string password = params["password"].get<string>();
+                int userId = params.at("user_id").get<int>();
+                string password = params.at("password").get<string>();
                 
                 User user = svc->getUserModel().query(userId, true);
                 if (user.getId() == -1) {
@@ -307,8 +307,8 @@ void ChatMcpServer::registerTools() {
             .build(),
         [svc](const json& params, const string&) -> json {
             try {
-                int userId = params["user_id"].get<int>();
-                int agentId = params["agent_id"].get<int>();
+                int userId = params.at("user_id").get<int>();
+                int agentId = params.at("agent_id").get<int>();
                 int limit = params.value("limit", 10);
                 if (limit > 50) limit = 50;
 
@@ -347,9 +347,9 @@ void ChatMcpServer::registerTools() {
             .build(),
         [svc](const json& params, const string&) -> json {
             try {
-                int fromId = params["from_user_id"].get<int>();
-                int toId = params["to_user_id"].get<int>();
-                string message = params["message"].get<string>();
+                int fromId = params.at("from_user_id").get<int>();
+                int toId = params.at("to_user_id").get<int>();
+                string message = params.at("message").get<string>();
                 
                 if (message.empty()) {
                     return {{"success", false}, {"error", "Message content cannot be empty"}};

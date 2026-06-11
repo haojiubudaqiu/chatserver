@@ -134,7 +134,6 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
             response.set_errmsg("");
             response.mutable_user()->set_id(user.getId());
             response.mutable_user()->set_name(user.getName());
-            response.mutable_user()->set_password(user.getPwd());
             response.mutable_user()->set_state(user.getState());
 
             vector<string> vec = _offlineMsgModel.query(id);
@@ -193,7 +192,6 @@ void ChatService::login(const TcpConnectionPtr &conn, const string &data, Timest
                 chat::User* userProto = response.add_friends();
                 userProto->set_id(friendUser.getId());
                 userProto->set_name(friendUser.getName());
-                userProto->set_password(friendUser.getPwd());
                 userProto->set_state(friendUser.getState());
             }
 
@@ -276,7 +274,6 @@ void ChatService::reg(const TcpConnectionPtr &conn, const string &data, Timestam
             response.set_errmsg("");
             response.mutable_user()->set_id(user.getId());
             response.mutable_user()->set_name(user.getName());
-            response.mutable_user()->set_password(user.getPwd());
             response.mutable_user()->set_state("offline");
             sendProtoMsg(conn, response);
         } else {

@@ -603,7 +603,8 @@ void server::register_tool(const tool& tool, tool_handler handler) {
             };
 
             try {
-                tool_result["content"] = it->second.second(tool_args, session_id);
+                json raw = it->second.second(tool_args, session_id);
+                tool_result["content"] = json::array({{{"type", "text"}, {"text", raw.dump()}}});
             } catch (const std::exception& e) {
                 tool_result["isError"] = true;
                 tool_result["content"] = json::array({

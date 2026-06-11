@@ -38,6 +38,7 @@ class AgentTcpClient:
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
         self._running = False
+        self._dedup_cache: dict[str, float] = {}
 
     async def run(self) -> None:
         """Connect, login, and enter receive loop. Reconnects on failure."""
@@ -70,7 +71,14 @@ class AgentTcpClient:
                 pass
 
     async def send_chat_message(self, to_id: int, content: str) -> None:
-        """Send a private OneChatMessage to a user."""
+        """Send a private OneChatMessage to a user with 5s dedup."""
+        dedup_key = f"{to_id}:{content[:50]}"
+        now = time.time()
+        last = self._dedup_cache.get(dedup_key, 0.0)
+        if now - last < 5.0:
+            logger.debug(f"Dedup: skip send to {to_id} (same content sent {now-last:.1f}s ago)")
+            return
+        self._dedup_cache[dedup_key] = now
         msg = chat.OneChatMessage()
         msg.base.msgid = chat.ONE_CHAT_MSG
         msg.base.fromid = self._agent_id

@@ -150,7 +150,6 @@ std::shared_ptr<MySQL> ConnectionPool::getMasterConnection() {
     }
     auto conn = masterConnections_.front();
     masterConnections_.pop();
-    masterTotalCount_--;
 
     if (conn && mysql_ping(conn->getConnection()) != 0) {
         conn = createConnection(MySQL::MASTER, masterServer_);
@@ -213,7 +212,6 @@ std::shared_ptr<MySQL> ConnectionPool::getSlaveConnection() {
 
             auto conn = slaveConnections_[slaveIndex].front();
             slaveConnections_[slaveIndex].pop();
-            slaveTotalCounts_[slaveIndex]--;
 
             if (conn && mysql_ping(conn->getConnection()) != 0) {
                 conn = createConnection(MySQL::SLAVE, slaveServers_[slaveIndex]);

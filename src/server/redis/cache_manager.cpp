@@ -60,11 +60,11 @@ User CacheManager::getUser(int userId) {
     if (!_redisCache) return User();
     
     User user = _redisCache->getUser(userId);
-    if (user.getId() != 0) {
+    if (user.getId() > 0) {
         return user;
     }
     user = _userModel->query(userId);
-    if (user.getId() != 0) {
+    if (user.getId() > 0) {
         _redisCache->setUser(user);
     }
     
@@ -139,7 +139,7 @@ std::string CacheManager::getUserStatus(int userId) {
         return status;
     }
     User user = _userModel->query(userId);
-    if (user.getId() != 0) {
+    if (user.getId() > 0) {
         status = user.getState();
         _redisCache->setUserStatus(userId, status);
     }
