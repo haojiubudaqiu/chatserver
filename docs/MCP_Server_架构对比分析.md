@@ -82,7 +82,7 @@ MCP Server 作为**主进程中的一个独立线程**运行，直接复用 `Cha
 |------|------|
 | `src/server/main.cpp` | 入口，解析 `--mcp-port` 参数，启动 MCP Server |
 | `src/server/mcp/chat_mcp_server.h` | ChatMcpServer 头文件（单例模式） |
-| `src/server/mcp/chat_mcp_server.cpp` | 注册 8 个 MCP 工具 + Handler 实现 |
+| `src/server/mcp/chat_mcp_server.cpp` | 注册 9 个 MCP 工具 + Handler 实现 |
 | `src/server/chatservice.cpp` | `sendMessageByMcp()` 方法，给 MCP 调用的消息发送 |
 | `c++_mcp/src/mcp_server.cpp` | MCP 协议核心引擎（1555 行） |
 | `c++_mcp/src/mcp_tool.cpp` | tool_builder 链式 API |
@@ -95,7 +95,7 @@ main() 启动
     ├── 解析 CLI 参数
     │      ./ChatServer 127.0.0.1 6000 --mcp-port 8888
     │
-    ├── ProtoMsgHandlerMap::registerHandler()  注册 8 个 Protobuf 消息处理器
+    ├── ProtoMsgHandlerMap::registerHandler()  注册 15 个 Protobuf 消息处理器
     │
     ├── if (g_mcpPort > 0):
     │      ChatMcpServer::instance()->start(g_mcpPort)   ← MCP Server 在此启动
@@ -103,7 +103,7 @@ main() 启动
     │           ├── 创建 mcp::server 实例 (host="0.0.0.0", port=8888)
     │           ├── set_server_info("ChatClusterServer", "1.0.0")
     │           ├── set_instructions("This MCP server provides...")
-    │           ├── registerTools()  ← 注册 8 个工具 + Handler
+    │           ├── registerTools()  ← 注册 9 个工具 + Handler
     │           └── server_->start(false)  ← 非阻塞，拉起 HTTP 线程池
     │
     └── muduo EventLoop::loop()  ← 主线程进入 Reactor 循环
@@ -111,7 +111,7 @@ main() 启动
 
 ### 2.4 工具注册详解
 
-`ChatMcpServer::registerTools()` 在 `chat_mcp_server.cpp:85-316` 中注册了以下 8 个工具：
+`ChatMcpServer::registerTools()` 在 `chat_mcp_server.cpp:85-316` 中注册了以下 9 个工具：
 
 #### 工具 1: `chat_server_stats` — 服务器统计
 
@@ -748,7 +748,7 @@ Client                               Server
 | **耦合度** | **强耦合**：MCP 代码导入所有 ChatServer 头文件 | **零耦合**：ChatServer 完全不知道 MCP 的存在 |
 | **部署方式** | `./ChatServer 127.0.0.1 6000 --mcp-port 8888` | 先启动 `ChatServer.exe`，再启动 `McpChatServer.exe` |
 | **性能延迟** | **≈ 0ms**：纯内存函数调用，无网络开销 | **≈ 1-2ms**：TCP 本地回环 + JSON 序列化/反序列化 |
-| **工具数量/能力** | 8 个工具，涵盖管理+业务 | 3 个工具，仅涵盖基础业务 |
+| **工具数量/能力** | 9 个工具，涵盖管理+业务 | 3 个工具，仅涵盖基础业务 |
 | **服务器内部状态** | ✅ 可访问（连接数、在线用户列表等） | ❌ 无法访问（只能做普通客户端能做的事） |
 | **发送消息机制** | 走完整投递链路（内存→Kafka→离线） | 通过 TCP JSON 协议发请求 |
 | **认证方式** | 数据库查询验证 | 委托给 ChatServer 验证 |
@@ -851,7 +851,7 @@ loop.loop();
 bool ChatMcpServer::start(uint16_t port) {
     server_ = make_unique<mcp::server>(config);
     server_->set_server_info("ChatClusterServer", "1.0.0");
-    registerTools();                                    // 注册 8 个工具
+    registerTools();                                    // 注册 9 个工具
     server_->start(false);                             // 非阻塞，拉起 HTTP 线程
     return true;
 }
@@ -866,7 +866,7 @@ void ChatMcpServer::registerTools() {
             };
         }
     );
-    // ... 8 个工具全部直接操作 svc->xxxModel()
+    // ... 9 个工具全部直接操作 svc->xxxModel()
 }
 ```
 
@@ -993,7 +993,7 @@ server.start(true);      // 阻塞当前线程，直接调用 listen()
 3. **深度整合**: 与服务器共享数据库连接池、Redis 缓存、Kafka 生产者，资源利用率高
 4. **数据一致性**: 发送消息走完整的投递链路（内存→Kafka→离线表），行为与普通客户端完全一致
 5. **返回信息丰富**: 登录时直接查数据库返回好友列表、群组列表，体验好
-6. **工具覆盖全面**: 8 个工具覆盖了全部业务操作
+6. **工具覆盖全面**: 9 个工具覆盖了全部业务操作
 
 **缺点**:
 1. **强耦合**: 修改 MCP Server 需要重新编译整个 ChatServer

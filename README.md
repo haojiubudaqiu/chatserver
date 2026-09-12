@@ -51,7 +51,7 @@
 - 🧠 **思考过程透明**：自动剥离 `<think>` 推理标签，只展示最终回答
 
 ### MCP 协议支持
-内置 **8 个 MCP 工具接口**（Streamable HTTP，2025-03-26 规范），供 AI Agent 调用：
+内置 **9 个 MCP 工具接口**（Streamable HTTP，2025-03-26 规范），供 AI Agent 调用：
 
 | 工具 | 功能 |
 |------|------|
@@ -63,6 +63,7 @@
 | `chat_get_user_friends` | 查询好友列表 |
 | `chat_get_group_info` | 查询群组详情 |
 | `chat_list_user_groups` | 用户所属群组列表 |
+| `chat_get_conversation_history` | 查询用户与 AI 的历史对话（AI 重启后恢复记忆） |
 
 ---
 
@@ -176,7 +177,7 @@ docker compose up -d
 # 5. 验证
 docker compose ps                     # 所有 17 个容器应为 Up
 curl http://127.0.0.1:8080/health     # Nginx: OK
-curl http://127.0.0.1:8000/api/me/9999  # Bridge: {"detail":"Not logged in"}
+curl http://127.0.0.1:8000/api/health # Bridge: {"status":"ok","users_online":0}
 
 # 6. 打开浏览器访问 http://localhost:3000
 ```
@@ -286,7 +287,7 @@ chatserver/
 │   ├── log/                       # 异步日志（muduo 风格双缓冲）
 │   │   ├── async_logging.cpp
 │   │   └── log_file.cpp
-│   ├── mcp/                       # MCP Server（8 个工具接口）
+│   ├── mcp/                       # MCP Server（9 个工具接口）
 │   │   ├── chat_mcp_server.cpp
 │   │   └── chat_mcp_server.h
 │   ├── proto/                     # Protobuf 消息定义
@@ -311,10 +312,12 @@ chatserver/
 │       └── package.json
 ├── docker/                        # Docker 配置文件
 │   ├── mysql/
-│   │   ├── init.sql               # 数据库初始化 + 预置数据
+│   │   ├── init.sql               # 数据库初始化 + 预置数据 + 复制账号
+│   │   ├── 02-setup-replication.sh # 从库首次启动自动配置主从复制
 │   │   ├── master.cnf
 │   │   └── slave1.cnf / slave2.cnf
-│   └── ...
+│   └── redis/
+│       └── sentinel{1,2,3}.conf   # 每个 Sentinel 独立配置（避免文件重写冲突）
 ├── test/                          # 测试代码
 │   ├── test_db_pool.cpp
 │   ├── test_redis.cpp
@@ -323,7 +326,9 @@ chatserver/
 │   └── test_e2e.py
 ├── docs/                          # 文档
 │   ├── QUICK_START.md             # 从零搭建指南
+│   ├── TESTING.md                 # 测试体系指南
 │   └── AGENT_USER_GUIDE.md        # AI 智能助手用户指南
+├── .github/workflows/ci.yml       # CI：C++ 编译 + Python 单测 + 前端构建
 ├── docker-compose.yml             # 17 个容器一键编排
 ├── Dockerfile.server              # ChatServer 多阶段构建
 ├── Dockerfile.web                 # Web 前端多阶段构建（Node → Nginx）
@@ -339,17 +344,20 @@ chatserver/
 
 ## 运行测试
 
+> 完整测试体系与运行方式见 **[docs/TESTING.md](docs/TESTING.md)**
+
 ```bash
+# 单元测试（无需任何服务）：C++（Linux）+ Agent + Bridge
+./run_tests.sh
+
 # 功能测试（需要服务器正在运行）
 ./test_full.sh                    # 61 个原生测试
 ./test_agent_e2e.sh               # 10 个 Agent E2E 测试
-
-# 单元测试
-./bin/test_db_pool
-./bin/test_redis
-./bin/test_models
-./bin/test_kafka
+./test_cross_server.sh            # 跨服务器消息路由测试
+./test_persistence.sh             # 消息持久化测试
 ```
+
+代码推送后 GitHub Actions 会自动执行 C++ 编译、全部 Python 单测、前端构建与 compose 校验（`.github/workflows/ci.yml`）。
 
 ---
 
@@ -457,6 +465,59 @@ docker compose up -d
 | Nginx HTTP | 8080 | 8080 | 健康检查 |
 | **Bridge** | **8000** | **8000** | REST + WebSocket |
 | **Web 前端** | **80** | **3000** | React SPA |
+
+---
+
+## Docker 文件关系说明
+
+`docker-compose.yml` 编排全部 17 个容器，但容器来源分两种：
+
+### 1. 官方镜像（无需 Dockerfile）
+
+```yaml
+mysql-master:
+  image: mysql:8.0                # 从 Docker Hub 直接拉取
+redis:
+  image: redis:7-alpine           # 官方已提供，免构建
+kafka:
+  image: confluentinc/cp-kafka:7.6.1
+zookeeper:
+  image: confluentinc/cp-zookeeper:7.6.1
+```
+
+MySQL、Redis、Kafka、ZooKeeper 是标准中间件，官方已有完善镜像，直接通过 `image:` 引用即可。
+
+### 2. 自定义构建（需要 Dockerfile）
+
+```yaml
+chat_server_1:
+  build:
+    dockerfile: Dockerfile.server  # ← 引用根目录的 Dockerfile.server
+chat_web:
+  build:
+    dockerfile: Dockerfile.web     # ← 引用根目录的 Dockerfile.web
+nginx:
+  build:
+    dockerfile: Dockerfile.nginx   # ← 引用根目录的 Dockerfile.nginx
+chat_agent:
+  build:
+    context: ./agent_service       # ← 该目录下的 Dockerfile
+chat_bridge:
+  build:
+    context: ./frontend/bridge     # ← 该目录下的 Dockerfile
+```
+
+我们自己的代码组件才需要自定义 Dockerfile。`Dockerfile.server` 等文件**本质上就是 Dockerfile**，只是因为项目有多个组件需要分别构建，所以用 `.组件名` 后缀区分。
+
+| 文件 | 构建内容 | 方式 |
+|------|----------|------|
+| `Dockerfile.server` | 多阶段构建 C++ ChatServer（builder → runtime） | 自编译 protobuf + muduo |
+| `Dockerfile.web` | 多阶段构建 React 前端（node build → nginx serve） | npm 构建 + 静态部署 |
+| `Dockerfile.nginx` | 极简 Nginx TCP 负载均衡 | 仅复制 nginx.conf |
+| `agent_service/Dockerfile` | AI Agent Python 服务 | pip 安装依赖 |
+| `frontend/bridge/Dockerfile` | FastAPI Bridge 服务 | pip 安装依赖 |
+
+**一句话：`docker-compose.yml` 是总指挥，通过 `build:` 引用外部 Dockerfile 构建自定义镜像，通过 `image:` 直接拉取官方镜像。**
 
 ---
 

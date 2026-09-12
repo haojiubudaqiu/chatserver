@@ -111,6 +111,19 @@ function App() {
     return data
   }, [])
 
+  // Re-login in background to pull the latest friends/groups from the server,
+  // so the sidebar refreshes after add-friend / create-group / join-group.
+  const refreshRoster = useCallback(async () => {
+    if (!user) return
+    try {
+      const data: LoginData = await api('/api/refresh', { id: user.id })
+      setFriends(data.friends)
+      setGroups(data.groups)
+    } catch (e: any) {
+      console.error('Roster refresh failed', e)
+    }
+  }, [user, api])
+
   useEffect(() => {
     if (!selectedChat || !user) return
     const chatKey = `${selectedChat.type}-${selectedChat.id}`
@@ -195,15 +208,19 @@ function App() {
     }
   }
 
+  // Periodically refresh roster (online states, new groups) while logged in
+  useEffect(() => {
+    if (!user) return
+    const t = window.setInterval(() => { refreshRoster() }, 30000)
+    return () => window.clearInterval(t)
+  }, [user, refreshRoster])
+
   const handleAddFriend = async () => {
     if (!user || !addFriendId) return
     try {
       const data = await api('/api/add_friend', { id: user.id, friendid: Number(addFriendId) })
       if (data.err_num === 0) {
-        const fid = Number(addFriendId)
-        if (!friends.some(f => f.id === fid)) {
-          setFriends(prev => [...prev, { id: fid, name: `User#${fid}`, state: 'offline' }])
-        }
+        await refreshRoster()
         showNotif('Friend added!')
       }
       setAddFriendId('')
@@ -216,7 +233,8 @@ function App() {
     if (!user || !createGroupName) return
     try {
       const data = await api('/api/create_group', { id: user.id, name: createGroupName, desc: createGroupDesc })
-      showNotif(`Group created! ID: ${data.groupid}. Re-login to see it.`)
+      await refreshRoster()
+      showNotif(`Group created! ID: ${data.groupid}`)
       setCreateGroupName('')
       setCreateGroupDesc('')
     } catch (e: any) {
@@ -228,7 +246,8 @@ function App() {
     if (!user || !joinGroupId) return
     try {
       await api('/api/join_group', { id: user.id, groupid: Number(joinGroupId) })
-      showNotif('Joined group! Re-login to see it.')
+      await refreshRoster()
+      showNotif(`Joined group #${joinGroupId}!`)
       setJoinGroupId('')
     } catch (e: any) {
       showNotif(e.message)

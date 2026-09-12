@@ -34,6 +34,9 @@ SERVER_PORT = int(os.environ.get("SERVER_PORT", "6000"))
 # Active sessions: user_id -> Session
 sessions: dict[int, Session] = {}
 
+# Login passwords kept in memory to support /api/refresh (logout+login dance)
+session_passwords: dict[int, str] = {}
+
 # WebSocket connections: user_id -> list[WebSocket]
 ws_connections: dict[int, list[WebSocket]] = {}
 
@@ -50,6 +53,7 @@ async def lifespan(app: FastAPI):
     for uid, session in list(sessions.items()):
         await session.close()
     sessions.clear()
+    session_passwords.clear()
     ws_connections.clear()
 
 
@@ -162,6 +166,7 @@ async def _cleanup_session(user_id: int):
     session = sessions.pop(user_id, None)
     if session:
         await session.close()
+    session_passwords.pop(user_id, None)
     wss = ws_connections.pop(user_id, None)
     if wss:
         for ws in wss:
@@ -170,6 +175,50 @@ async def _cleanup_session(user_id: int):
             except Exception:
                 pass
     pending.pop(user_id, None)
+
+
+async def _do_login(user_id: int, password: str) -> dict:
+    """Open a fresh TCP session, log in, and return the standard login payload."""
+    session = await create_session(user_id)
+    try:
+        resp_data = await send_and_wait(session, chat.LOGIN_MSG, make_login_request(user_id, password))
+    except Exception as e:
+        await session.close()
+        raise HTTPException(502, str(e))
+
+    if resp_data is None:
+        await session.close()
+        raise HTTPException(502, "No response from server")
+
+    resp = chat.LoginResponse()
+    resp.ParseFromString(resp_data)
+    if resp.err_num != 0:
+        await session.close()
+        raise HTTPException(403, resp.errmsg or "Login failed")
+
+    # Transfer to persistent session
+    sessions[user_id] = session
+    session.user_id = user_id
+    session.on_message = _make_msg_callback(user_id, is_persistent=True)
+
+    offlines = []
+    for raw_b64 in resp.offlinemsg:
+        offlines.append(_decode_proto_msg(raw_b64))
+
+    friends = [{"id": f.id, "name": f.name, "state": f.state} for f in resp.friends]
+
+    groups = [
+        {
+            "id": g.id, "name": g.groupname, "desc": g.groupdesc,
+            "members": [{"id": u.id, "name": u.name, "state": u.state, "role": u.role} for u in g.users],
+        }
+        for g in resp.groups
+    ]
+
+    return {
+        "err_num": 0, "user": {"id": resp.user.id, "name": resp.user.name},
+        "friends": friends, "groups": groups, "offlinemsg": offlines,
+    }
 
 
 # ─── REST API ────────────────────────────────────────────────
@@ -202,7 +251,7 @@ async def api_login(body: dict):
     if not user_id or not password:
         raise HTTPException(400, "id and password required")
 
-    # If user already has a session, reuse it
+    # If user already has a session, replace it cleanly
     if user_id in sessions:
         try:
             await send_and_wait(sessions[user_id], chat.LOGINOUT_MSG, make_logout_request(user_id), timeout=3)
@@ -210,65 +259,9 @@ async def api_login(body: dict):
             pass
         await _cleanup_session(user_id)
 
-    session = await create_session(user_id)
-    try:
-        resp_data = await send_and_wait(session, chat.LOGIN_MSG, make_login_request(user_id, password))
-    except Exception as e:
-        await session.close()
-        raise HTTPException(502, str(e))
-
-    if resp_data is None:
-        await session.close()
-        raise HTTPException(502, "No response from server")
-
-    resp = chat.LoginResponse()
-    resp.ParseFromString(resp_data)
-    if resp.err_num != 0:
-        await session.close()
-        raise HTTPException(403, resp.errmsg or "Login failed")
-
-    # Transfer to persistent session
-    sessions[user_id] = session
-    session.user_id = user_id
-    session.on_message = _make_msg_callback(user_id, is_persistent=True)
-
-    offlines = []
-    for raw_b64 in resp.offlinemsg:
-        raw = base64.b64decode(raw_b64)
-        # Detect message type from protobuf's own msgid field
-        probe = chat.OneChatMessage()
-        probe.ParseFromString(raw)
-        msgtype = probe.base.msgid
-        if msgtype == chat.GROUP_CHAT_MSG:
-            inner = chat.GroupChatMessage()
-            inner.ParseFromString(raw)
-            offlines.append({
-                "type": "groupchat", "fromid": inner.base.fromid,
-                "groupid": inner.groupid, "time": inner.base.time,
-                "message": inner.message,
-            })
-        else:
-            # Default to OneChatMessage
-            offlines.append({
-                "type": "chat", "fromid": probe.base.fromid,
-                "toid": probe.base.toid, "time": probe.base.time,
-                "message": probe.message,
-            })
-
-    friends = [{"id": f.id, "name": f.name, "state": f.state} for f in resp.friends]
-
-    groups = [
-        {
-            "id": g.id, "name": g.groupname, "desc": g.groupdesc,
-            "members": [{"id": u.id, "name": u.name, "state": u.state, "role": u.role} for u in g.users],
-        }
-        for g in resp.groups
-    ]
-
-    return {
-        "err_num": 0, "user": {"id": resp.user.id, "name": resp.user.name},
-        "friends": friends, "groups": groups, "offlinemsg": offlines,
-    }
+    result = await _do_login(user_id, password)
+    session_passwords[user_id] = password
+    return result
 
 
 @app.post("/api/logout")
@@ -420,17 +413,35 @@ async def api_chat_history(body: dict):
     return {"err_num": 0, "messages": messages}
 
 
-@app.get("/api/me/{user_id}")
-async def api_get_me(user_id: int):
-    """Get current user info (friends + groups)."""
-    session = sessions.get(user_id)
-    if not session:
+@app.get("/api/health")
+async def api_health():
+    """Liveness probe: reports bridge status and how many users hold live sessions."""
+    return {"status": "ok", "users_online": len(sessions)}
+
+
+@app.post("/api/refresh")
+async def api_refresh(body: dict):
+    """Re-login the user on a fresh TCP session and return the latest friends/groups.
+
+    Called by the frontend after joining/creating a group so the sidebar
+    updates immediately, without the user manually re-logging in.
+    """
+    user_id = body.get("id")
+    if not user_id:
+        raise HTTPException(400, "id required")
+    password = session_passwords.get(user_id)
+    if not password or user_id not in sessions:
         raise HTTPException(401, "Not logged in")
-    user = chat.User()
-    # We can't query via TCP, so we read from DB via the model
-    # For now, return cached data from login
-    # This needs a server-side refresh endpoint
-    raise HTTPException(501, "Use /api/login response data; refresh not yet supported")
+
+    try:
+        await send_and_wait(sessions[user_id], chat.LOGINOUT_MSG, make_logout_request(user_id), timeout=3)
+    except Exception:
+        pass
+    await _cleanup_session(user_id)
+
+    result = await _do_login(user_id, password)
+    session_passwords[user_id] = password
+    return result
 
 
 # ─── WebSocket ───────────────────────────────────────────────

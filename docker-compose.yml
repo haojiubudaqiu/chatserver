@@ -45,6 +45,9 @@ services:
     volumes:
       - mysql_slave1_data:/var/lib/mysql
       - ./docker/mysql/slave1.cnf:/etc/mysql/conf.d/slave.cnf
+      # 从库首次初始化：重放与主库相同的建表脚本，然后自动配置主从复制
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./docker/mysql/02-setup-replication.sh:/docker-entrypoint-initdb.d/02-setup-replication.sh:ro
     networks:
       - chat_network
     restart: unless-stopped
@@ -66,6 +69,9 @@ services:
     volumes:
       - mysql_slave2_data:/var/lib/mysql
       - ./docker/mysql/slave2.cnf:/etc/mysql/conf.d/slave.cnf
+      # 从库首次初始化：重放与主库相同的建表脚本，然后自动配置主从复制
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./docker/mysql/02-setup-replication.sh:/docker-entrypoint-initdb.d/02-setup-replication.sh:ro
     networks:
       - chat_network
     restart: unless-stopped
@@ -127,7 +133,7 @@ services:
     ports:
       - "26379:26379"
     volumes:
-      - ./docker/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
+      - ./docker/redis/sentinel1.conf:/usr/local/etc/redis/sentinel.conf
     command: redis-sentinel /usr/local/etc/redis/sentinel.conf
     depends_on:
       - redis
@@ -142,7 +148,7 @@ services:
     ports:
       - "26380:26379"
     volumes:
-      - ./docker/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
+      - ./docker/redis/sentinel2.conf:/usr/local/etc/redis/sentinel.conf
     command: redis-sentinel /usr/local/etc/redis/sentinel.conf
     depends_on:
       - redis
@@ -157,7 +163,7 @@ services:
     ports:
       - "26381:26379"
     volumes:
-      - ./docker/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
+      - ./docker/redis/sentinel3.conf:/usr/local/etc/redis/sentinel.conf
     command: redis-sentinel /usr/local/etc/redis/sentinel.conf
     depends_on:
       - redis
@@ -188,6 +194,8 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      # ChatServer 依赖 user_messages / group_messages 两个 topic，首次发消息时自动创建
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     ports:
       - "9092:9092"
       - "9093:9093"
@@ -334,6 +342,12 @@ services:
     networks:
       - chat_network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # AI 智能助手（LangChain + LangGraph + ModelScope LLM）
   # 需要设置 MODELSCOPE_API_KEY 环境变量才能正常工作

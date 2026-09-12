@@ -34,9 +34,13 @@ resources/
 # MCP library - exclude test framework and build artifacts
 c++_mcp/test/googletest/
 c++_mcp/build/
-c++_mcp/examples/*.png*.pyc
+c++_mcp/examples/*.png
+*.pyc
 __pycache__/
-message_pb2.py
+.pytest_cache/
+# 注意: Python 端运行所需的 message_pb2.py 已改为纳入版本控制
+# (agent_service/proto、frontend/bridge/proto、src/server/proto、test),
+# 否则新克隆的仓库无法构建 bridge/agent 的 Docker 镜像
 
 # Frontend
 frontend/web/node_modules/

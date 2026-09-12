@@ -7,4 +7,4 @@ super-read-only=1
 character-set-server=utf8mb4
 collation-server=utf8mb4_unicode_ci
 bind-address=0.0.0.0
-skip-slave-start=ON
+# skip-slave-start 已移除：容器重启后复制线程需自动恢复

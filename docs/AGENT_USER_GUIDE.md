@@ -231,7 +231,7 @@ tail -f /tmp/agent.log
 tail -f /tmp/server0.log
 ```
 
-### 支持的 MCP 工具（共 8 个）
+### 支持的 MCP 工具（共 9 个）
 
 | 工具名 | 参数 | 说明 |
 |--------|------|------|
@@ -243,3 +243,4 @@ tail -f /tmp/server0.log
 | `chat_list_user_groups` | `user_id` | 用户加入的群组 |
 | `chat_user_login` | `user_id`, `password` | 用户登录验证 |
 | `chat_send_message` | `from_user_id`, `to_user_id`, `message` | **代发消息** |
+| `chat_get_conversation_history` | `user_id`, `agent_id` | 查询用户与 AI 的历史对话 |
