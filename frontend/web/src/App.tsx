@@ -87,7 +87,7 @@ function App() {
       const data = JSON.parse(e.data)
       if (data.type === 'error') {
         wsReconnectRef.current = false
-        setError(data.message || 'Session expired')
+        setError(data.message || '会话已过期，请重新登录')
         setPage('login')
         return
       }
@@ -107,7 +107,7 @@ function App() {
       body: JSON.stringify(body),
     })
     const data = await res.json()
-    if (!res.ok) throw new Error(data.detail || 'Request failed')
+    if (!res.ok) throw new Error(data.detail || '请求失败')
     return data
   }, [])
 
@@ -166,7 +166,7 @@ function App() {
     try {
       setError('')
       const data = await api('/api/register', { name: regName, password: regPwd })
-      showNotif(`Registered successfully! ID: ${data.user.id}`)
+      showNotif(`注册成功！您的 ID：${data.user.id}`)
       setLoginId(String(data.user.id))
       setLoginPwd(regPwd)
       setRegName('')
@@ -221,7 +221,7 @@ function App() {
       const data = await api('/api/add_friend', { id: user.id, friendid: Number(addFriendId) })
       if (data.err_num === 0) {
         await refreshRoster()
-        showNotif('Friend added!')
+        showNotif('好友添加成功！')
       }
       setAddFriendId('')
     } catch (e: any) {
@@ -234,7 +234,7 @@ function App() {
     try {
       const data = await api('/api/create_group', { id: user.id, name: createGroupName, desc: createGroupDesc })
       await refreshRoster()
-      showNotif(`Group created! ID: ${data.groupid}`)
+      showNotif(`群组创建成功！ID：${data.groupid}`)
       setCreateGroupName('')
       setCreateGroupDesc('')
     } catch (e: any) {
@@ -247,7 +247,7 @@ function App() {
     try {
       await api('/api/join_group', { id: user.id, groupid: Number(joinGroupId) })
       await refreshRoster()
-      showNotif(`Joined group #${joinGroupId}!`)
+      showNotif(`已加入群组 #${joinGroupId}！`)
       setJoinGroupId('')
     } catch (e: any) {
       showNotif(e.message)
@@ -299,19 +299,19 @@ function App() {
     return (
       <div className="auth-container">
         <div className="auth-box">
-          <h1>Chat Server</h1>
+          <h1>ChatPulse 脉聊</h1>
           <div className="auth-section">
-            <h3>Login</h3>
-            <input placeholder="User ID" value={loginId} onChange={e => setLoginId(e.target.value)} />
-            <input type="password" placeholder="Password" value={loginPwd} onChange={e => setLoginPwd(e.target.value)} />
-            <button onClick={handleLogin}>Login</button>
+            <h3>登录</h3>
+            <input placeholder="用户 ID" value={loginId} onChange={e => setLoginId(e.target.value)} />
+            <input type="password" placeholder="密码" value={loginPwd} onChange={e => setLoginPwd(e.target.value)} />
+            <button onClick={handleLogin}>登 录</button>
           </div>
           <div className="auth-divider" />
           <div className="auth-section">
-            <h3>Register</h3>
-            <input placeholder="Username" value={regName} onChange={e => setRegName(e.target.value)} />
-            <input type="password" placeholder="Password" value={regPwd} onChange={e => setRegPwd(e.target.value)} />
-            <button onClick={handleRegister}>Register</button>
+            <h3>注册</h3>
+            <input placeholder="用户名" value={regName} onChange={e => setRegName(e.target.value)} />
+            <input type="password" placeholder="密码" value={regPwd} onChange={e => setRegPwd(e.target.value)} />
+            <button onClick={handleRegister}>注 册</button>
           </div>
           {error && <div className="error">{error}</div>}
         </div>
@@ -325,15 +325,15 @@ function App() {
       <div className="sidebar">
         <div className="sidebar-header">
           <span className="user-name">{user?.name} (#{user?.id})</span>
-          <button className="logout-btn" onClick={handleLogout}>Logout</button>
+          <button className="logout-btn" onClick={handleLogout}>退出登录</button>
         </div>
         <div className="sidebar-section">
           <div className="section-title">
-            Friends ({friends.length})
-            <input className="filter-input" placeholder="Filter..." value={friendFilter} onChange={e => setFriendFilter(e.target.value)} />
+            好友 ({friends.length})
+            <input className="filter-input" placeholder="筛选..." value={friendFilter} onChange={e => setFriendFilter(e.target.value)} />
           </div>
           <div className="add-friend-row">
-            <input className="small-input" placeholder="Add friend ID" value={addFriendId} onChange={e => setAddFriendId(e.target.value)} />
+            <input className="small-input" placeholder="添加好友 ID" value={addFriendId} onChange={e => setAddFriendId(e.target.value)} />
             <button className="small-btn" onClick={handleAddFriend}>+</button>
           </div>
           <div className="list">
@@ -347,15 +347,15 @@ function App() {
           </div>
         </div>
         <div className="sidebar-section">
-          <div className="section-title">Groups ({groups.length})</div>
+          <div className="section-title">群组 ({groups.length})</div>
           <div className="add-friend-row">
-            <input className="small-input" placeholder="Group name" value={createGroupName} onChange={e => setCreateGroupName(e.target.value)} />
-            <input className="small-input" placeholder="Desc" value={createGroupDesc} onChange={e => setCreateGroupDesc(e.target.value)} />
+            <input className="small-input" placeholder="群组名称" value={createGroupName} onChange={e => setCreateGroupName(e.target.value)} />
+            <input className="small-input" placeholder="描述" value={createGroupDesc} onChange={e => setCreateGroupDesc(e.target.value)} />
           </div>
-          <button className="create-group-btn" onClick={handleCreateGroup}>Create Group</button>
+          <button className="create-group-btn" onClick={handleCreateGroup}>创建群组</button>
           <div className="add-friend-row">
-            <input className="small-input" placeholder="Join group ID" value={joinGroupId} onChange={e => setJoinGroupId(e.target.value)} />
-            <button className="small-btn" onClick={handleJoinGroup}>Join</button>
+            <input className="small-input" placeholder="加入群组 ID" value={joinGroupId} onChange={e => setJoinGroupId(e.target.value)} />
+            <button className="small-btn" onClick={handleJoinGroup}>加入</button>
           </div>
           <div className="list">
             {groups.map(g => (
@@ -389,13 +389,13 @@ function App() {
               <div ref={msgEndRef} />
             </div>
             <div className="input-row">
-              <input className="chat-input" placeholder="Type a message..." value={inputText}
+              <input className="chat-input" placeholder="输入消息..." value={inputText}
                 onChange={e => setInputText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
-              <button className="send-btn" onClick={handleSend}>Send</button>
+              <button className="send-btn" onClick={handleSend}>发 送</button>
             </div>
           </>
         ) : (
-          <div className="no-chat">Select a friend or group to start chatting</div>
+          <div className="no-chat">选择好友或群组开始聊天</div>
         )}
       </div>
     </div>
