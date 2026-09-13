@@ -12,23 +12,19 @@ CHAT_SERVER_PORT = int(os.environ.get("CHAT_SERVER_PORT", "6000"))
 # ── MCP (Model Context Protocol) ────────────────────────────────
 MCP_SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://127.0.0.1:8888/mcp")
 
-# ── ModelScope (LLM) ───────────────────────────────────────────
+# ── LLM API (OpenAI-compatible) ────────────────────────────────
 MODELSCOPE_API_KEY = os.environ.get("MODELSCOPE_API_KEY", "")
-MODELSCOPE_BASE_URL = os.environ.get("MODELSCOPE_BASE_URL", "https://api-inference.modelscope.cn/v1")
+MODELSCOPE_BASE_URL = os.environ.get("MODELSCOPE_BASE_URL", "https://api.edgefn.net/v1")
 
 # Primary model (first tried). Can be overridden via MODEL_NAME env var.
-MODEL_NAME = os.environ.get("MODEL_NAME", "deepseek-ai/DeepSeek-V4-Pro")
+MODEL_NAME = os.environ.get("MODEL_NAME", "DeepSeek-V4-Flash-0731")
 
 # Fallback models tried in order when primary model hits rate limits.
-# Available on ModelScope API-Inference (verified 2026-09):
-#   - deepseek-ai/DeepSeek-V4-Pro: strong reasoning, recommended
-#   - deepseek-ai/DeepSeek-V4-Flash-0731: fast, lightweight
-#   - Qwen/Qwen3-30B-A3B: balanced, good tool support
-#   - MiniMax/MiniMax-M1-80k: fast (may hit rate limits)
+# Baishan智算 (api.edgefn.net) model names (no org prefix):
 FALLBACK_MODELS = [
-    "deepseek-ai/DeepSeek-V4-Flash-0731",
-    "Qwen/Qwen3-30B-A3B",
-    "MiniMax/MiniMax-M1-80k",
+    "DeepSeek-V4-Pro",
+    "GLM-5",
+    "MiniMax-M3",
 ]
 
 # ── Tavily (Web Search) ────────────────────────────────────────
