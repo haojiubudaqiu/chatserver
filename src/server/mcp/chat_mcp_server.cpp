@@ -347,8 +347,9 @@ void ChatMcpServer::registerTools() {
             .build(),
         [svc](const json& params, const string&) -> json {
             try {
+                LOG_INFO << "[MCP] chat_send_message called with params: " << params.dump();
                 int fromId = params.at("from_user_id").get<int>();
-                int toId = params.at("to_user_id").get<int>();
+                int toId = params.contains("to_user_id") ? params.at("to_user_id").get<int>() : params.at("to_id").get<int>();
                 string message = params.at("message").get<string>();
                 
                 if (message.empty()) {
@@ -358,21 +359,26 @@ void ChatMcpServer::registerTools() {
                     return {{"success", false}, {"error", "Cannot send message to yourself"}};
                 }
                 
-                User fromUser = svc->getUserModel().query(fromId);
+                User fromUser = svc->getUserModel().query(fromId, true);
                 if (fromUser.getId() == -1) {
+                    LOG_ERROR << "[MCP] Sender user not found: " << fromId;
                     return {{"success", false}, {"error", "Sender user not found"}, {"fromUserId", fromId}};
                 }
                 
-                User toUser = svc->getUserModel().query(toId);
+                User toUser = svc->getUserModel().query(toId, true);
                 if (toUser.getId() == -1) {
+                    LOG_ERROR << "[MCP] Recipient user not found: " << toId;
                     return {{"success", false}, {"error", "Recipient user not found"}, {"toUserId", toId}};
                 }
                 
+                LOG_INFO << "[MCP] Sending message from " << fromId << " to " << toId;
                 bool ok = svc->sendMessageByMcp(fromId, toId, message);
                 if (!ok) {
+                    LOG_ERROR << "[MCP] sendMessageByMcp failed for " << fromId << " -> " << toId;
                     return {{"success", false}, {"error", "Failed to send message"}};
                 }
                 
+                LOG_INFO << "[MCP] Message sent successfully from " << fromId << " to " << toId;
                 return {
                     {"success", true},
                     {"message", "Message sent successfully"},
@@ -381,6 +387,7 @@ void ChatMcpServer::registerTools() {
                     {"deliveryMethod", toUser.getState() == "online" ? "direct" : "offline_stored"}
                 };
             } catch (const std::exception& e) {
+                LOG_ERROR << "[MCP] chat_send_message exception: " << e.what();
                 return {{"success", false}, {"error", string("chat_send_message failed: ") + e.what()}};
             }
         }

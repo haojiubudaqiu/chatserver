@@ -109,7 +109,7 @@ class ChatAgent:
             temperature=0.3,
         )
 
-    async def initialize(self) -> None:
+    async def initialize(self, tcp_client=None) -> None:
         import redis.asyncio as aioredis
         self._redis = aioredis.Redis(
             host=config.REDIS_HOST,
@@ -149,6 +149,30 @@ class ChatAgent:
         except Exception as e:
             logger.error(f"Failed to load MCP tools via SDK: {e}")
 
+        # Remove broken MCP chat_send_message and replace with native TCP tool
+        tools = [t for t in tools if getattr(t, 'name', '') != 'chat_send_message']
+
+        if tcp_client is not None:
+            self._tcp_client = tcp_client
+            from langchain_core.tools import tool
+
+            @tool
+            async def send_message_to_friend(from_user_id: int, to_user_id: int, message: str) -> str:
+                """Send a private message from one user to another. Use this when the user asks you to send a message to their friend. from_user_id is the requesting user's ID, to_user_id is the friend's ID, message is the text content."""
+                try:
+                    original_id = tcp_client._agent_id
+                    tcp_client._agent_id = from_user_id
+                    await tcp_client.send_chat_message(to_user_id, message)
+                    tcp_client._agent_id = original_id
+                    return json.dumps({"success": True, "message": f"Message sent to user {to_user_id}", "content": message}, ensure_ascii=False)
+                except Exception as e:
+                    return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
+            tools.append(send_message_to_friend)
+            logger.info("Native TCP send_message_to_friend tool registered")
+        else:
+            logger.warning("No TCP client provided, send_message tool unavailable")
+
         if config.has_model_api_key():
             llm_with_tools = None
             for _ in range(len(self._model_names)):
@@ -180,13 +204,12 @@ class ChatAgent:
                 f"你是一个集成在高性能集群聊天服务器中的AI智能助手。\n"
                 f"当前日期时间：{now.strftime('%Y年%m月%d日 %H:%M')}\n"
                 f"当前与你对话的用户ID是：{state['sender_id']}（{state.get('sender_name','')}）\n\n"
-                f"## 可用能力\n"
-                f"- 日常闲聊、问答\n"
-                f"- 使用 tavily_search_results_json 搜索最新资讯（联网搜索）\n"
-                f"  - 当用户问'今天'、'昨天'、'最近'等涉及当前日期的问题时，必须使用 tavily 搜索获取实时信息\n"
-                f"  - 搜索时在关键词中主动加上当前日期（{now.strftime('%Y年%m月%d日')}）以提高准确性\n"
-                f"- 调用后端MCP工具查好友、查群组、查在线用户、查看服务器统计\n"
-                f"- 使用 chat_send_message 帮用户给他的好友发消息（from_user_id 必须用 {state['sender_id']}）\n\n"
+                f"## 工具使用规则（必须严格遵守）\n"
+                f"1. 当用户要求【给好友发消息】时，你【必须】调用 chat_send_message 工具，参数 from_user_id={state['sender_id']}，to_user_id=好友ID，message=消息内容\n"
+                f"2. 当用户问【今天/最近天气、新闻】时，你【必须】先调用 tavily_search_results_json 搜索\n"
+                f"3. 当用户问【好友列表】时，你【必须】调用 chat_get_user_friends\n"
+                f"4. 工具调用后，用自然语言总结工具返回的结果\n"
+                f"5. 【禁止】在未调用工具的情况下直接回复'做不到'或'未找到'\n\n"
                 f"## 行为准则\n"
                 f"- 热情、专业、友好\n"
                 f"- 如果用户一次问了多个问题，必须逐一回答，每个问题调用对应的工具\n"
@@ -202,6 +225,11 @@ class ChatAgent:
                     if hasattr(response, "content") and response.content is None:
                         logger.warning(f"LLM returned null content (attempt {attempt+1}), retrying...")
                         continue
+                    if hasattr(response, "tool_calls") and response.tool_calls:
+                        logger.info(f"LLM requested {len(response.tool_calls)} tool call(s): "
+                                    f"{[tc['name'] for tc in response.tool_calls]}")
+                    else:
+                        logger.info(f"LLM returned text-only response (no tool calls)")
                     return {"messages": [response]}
                 except openai.RateLimitError:
                     logger.warning(f"Model {self._model_names[self._model_idx]} quota exceeded")

@@ -38,13 +38,23 @@ async def main() -> None:
 
     # 1. Initialize LangGraph agent
     agent = ChatAgent(config.MCP_SERVER_URL)
+
+    # 2. TCP client (runs its own reconnect loop)
+    tcp_client = AgentTcpClient(
+        host=config.CHAT_SERVER_HOST,
+        port=config.CHAT_SERVER_PORT,
+        agent_id=config.AI_USER_ID,
+        password=config.AI_PASSWORD,
+        on_message=None,  # Will set after agent init
+    )
+
     try:
-        await agent.initialize()
+        await agent.initialize(tcp_client=tcp_client)
     except Exception as e:
         logger.error(f"Agent initialization failed: {e}", exc_info=True)
         sys.exit(1)
 
-    # 2. Message handler
+    # 3. Message handler
     async def handle_user_message(sender_id: int, content: str, timestamp: int) -> None:
         try:
             sender_name = f"User#{sender_id}"
@@ -56,14 +66,8 @@ async def main() -> None:
         except Exception as e:
             logger.error(f"Error handling message from user {sender_id}: {e}", exc_info=True)
 
-    # 3. TCP client (runs its own reconnect loop)
-    tcp_client = AgentTcpClient(
-        host=config.CHAT_SERVER_HOST,
-        port=config.CHAT_SERVER_PORT,
-        agent_id=config.AI_USER_ID,
-        password=config.AI_PASSWORD,
-        on_message=handle_user_message,
-    )
+    # Set the message handler on tcp_client
+    tcp_client._on_message = handle_user_message
 
     try:
         await tcp_client.run()
