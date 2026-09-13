@@ -46,4 +46,8 @@ link_directories(
 
 # 加载子目录
 add_subdirectory(src)
-add_subdirectory(test)
+
+# test目录在Docker构建时可能被排除，条件加载
+if(EXISTS ${PROJECT_SOURCE_DIR}/test/CMakeLists.txt)
+    add_subdirectory(test)
+endif()

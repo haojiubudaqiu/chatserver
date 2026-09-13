@@ -39,7 +39,7 @@ def pack_message(msg) -> bytes:
     data = msg.SerializeToString()
     total_len = 4 + len(data)
     msgid = msg.base.msgid
-    buf = struct.pack("!i", total_len)   # total_len
+    buf = struct.pack("!i", total_len)   # total_len (network byte order = big-endian, matching muduo Buffer)
     buf += struct.pack("!i", msgid)       # msgid
     buf += data
     return buf

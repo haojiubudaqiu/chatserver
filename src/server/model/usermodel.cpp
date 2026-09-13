@@ -145,7 +145,7 @@ bool UserModel::updateState(User user)
 
 void UserModel::resetState()
 {
-    char sql[1024] = "update user set state = 'offline' where state = 'online'";
+    char sql[1024] = "update user set state = 'offline' where state = 'online' and id != 10000";
 
     ConnectionGuard conn(DatabaseRouter::instance()->routeUpdate());
     if (conn) {

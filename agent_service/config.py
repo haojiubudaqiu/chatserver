@@ -17,16 +17,18 @@ MODELSCOPE_API_KEY = os.environ.get("MODELSCOPE_API_KEY", "")
 MODELSCOPE_BASE_URL = os.environ.get("MODELSCOPE_BASE_URL", "https://api-inference.modelscope.cn/v1")
 
 # Primary model (first tried). Can be overridden via MODEL_NAME env var.
-MODEL_NAME = os.environ.get("MODEL_NAME", "MiniMax/MiniMax-M1-80k")
+MODEL_NAME = os.environ.get("MODEL_NAME", "deepseek-ai/DeepSeek-V4-Pro")
 
 # Fallback models tried in order when primary model hits rate limits.
-# See docs/AGENT_USER_GUIDE.md for recommended models:
-#   - MiniMax/MiniMax-M1-80k: fastest, good tool support (our new default)
-#   - ZhipuAI/GLM-5: balanced, good tool support (was default, often quota-full)
-#   - deepseek-ai/DeepSeek-R1-0528: strong reasoning, slower
+# Available on ModelScope API-Inference (verified 2026-09):
+#   - deepseek-ai/DeepSeek-V4-Pro: strong reasoning, recommended
+#   - deepseek-ai/DeepSeek-V4-Flash-0731: fast, lightweight
+#   - Qwen/Qwen3-30B-A3B: balanced, good tool support
+#   - MiniMax/MiniMax-M1-80k: fast (may hit rate limits)
 FALLBACK_MODELS = [
-    "ZhipuAI/GLM-5",
-    "deepseek-ai/DeepSeek-R1-0528",
+    "deepseek-ai/DeepSeek-V4-Flash-0731",
+    "Qwen/Qwen3-30B-A3B",
+    "MiniMax/MiniMax-M1-80k",
 ]
 
 # ── Tavily (Web Search) ────────────────────────────────────────

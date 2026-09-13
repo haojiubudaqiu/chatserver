@@ -71,7 +71,9 @@ def _make_dummy_llm():
 
 
 def _strip_think_tags(text: str) -> str:
-    return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+    t = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+    t = re.sub(r'<think>.*', '', t, flags=re.DOTALL).strip()
+    return t
 
 
 class ChatAgent:
@@ -439,7 +441,14 @@ class ChatAgent:
         try:
             result = await self._app.ainvoke(state, config_dict)
         except Exception as e:
+            err_msg = str(e).lower()
             logger.error(f"LangGraph ainvoke failed: {e}", exc_info=True)
+            if "insufficient balance" in err_msg or "quota" in err_msg:
+                return "AI服务额度已用完，请联系管理员充值后再试。"
+            if "rate" in err_msg or "429" in err_msg:
+                return "AI服务繁忙，请稍后再试。"
+            if "no provider" in err_msg or "400" in err_msg:
+                return "AI模型暂时不可用，请稍后再试。"
             return "抱歉，AI处理请求时遇到暂时性错误，请稍后再试。"
 
         # Save updated conversation to Redis

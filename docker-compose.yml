@@ -238,6 +238,7 @@ services:
       - KAFKA_HOST=kafka
     networks:
       - chat_network
+    command: /bin/sh -c "./bin/ChatServer 0.0.0.0 $$SERVER_PORT --mcp-port $$MCP_PORT --no-reset-state"
     restart: unless-stopped
 
   # ChatPulse 服务器实例 2
@@ -271,6 +272,7 @@ services:
       - KAFKA_HOST=kafka
     networks:
       - chat_network
+    command: /bin/sh -c "./bin/ChatServer 0.0.0.0 $$SERVER_PORT --mcp-port $$MCP_PORT --no-reset-state"
     restart: unless-stopped
 
   # ChatPulse 服务器实例 3
@@ -304,6 +306,7 @@ services:
       - KAFKA_HOST=kafka
     networks:
       - chat_network
+    command: /bin/sh -c "./bin/ChatServer 0.0.0.0 $$SERVER_PORT --mcp-port $$MCP_PORT --no-reset-state"
     restart: unless-stopped
 
   # Nginx TCP 负载均衡器（将客户端连接分发到 3 个 ChatPulse 实例）
